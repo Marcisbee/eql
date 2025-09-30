@@ -57,7 +57,8 @@ operators, or pipelines, combined with parentheses `(` `)` for grouping.
 ### Literals
 
 - String: `"hello"` (double quotes only).
-- Number: `123`, `3.14`.
+- Number: `123`, `3.14`, supports an optional leading minus for negatives: `-1`,
+  `-3.14`.
 - Boolean: `true`, `false`.
 - Null: `null`.
 - Array: `[expr, expr, ...]` (e.g., `[1, "a"]`); supports ranges `start..end`
@@ -159,7 +160,7 @@ Functions on invalid inputs return `null`. Aggregates skip `null` (e.g.,
 <message> ::= (<text> | <escape> | "{" <expr> "}")*
 <escape> ::= "\{" | "\\"
 <string> ::= '"' (<char> | '\"')* '"'
-<number> ::= [0-9]+ ('.' [0-9]+)?
+<number> ::= -? [0-9]+ ('.' [0-9]+)?
 <ident> ::= [a-zA-Z_][a-zA-Z0-9_]*
 <char> ::= any non-quote char
 <text> ::= any char except unescaped { or \

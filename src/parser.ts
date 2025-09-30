@@ -252,6 +252,7 @@ function buildParser(input: string) {
     consume,
     and,
     or,
+    not,
     zeroOrMany,
     zeroOrManySep,
     zeroOrOne,
@@ -358,7 +359,11 @@ function buildParser(input: string) {
     ]),
   );
 
-  PATH.set = and([PATH_HEAD, PATH_TAIL], ([head, tail]) => {
+  PATH.set = and([
+    not(or([consume(True), consume(False), consume(NullTok)])),
+    PATH_HEAD,
+    PATH_TAIL,
+  ], ([, head, tail]) => {
     const segments: PathSegment[] = [
       { kind: "prop", name: head.first },
       ...(tail as PathSegment[]),
@@ -374,6 +379,13 @@ function buildParser(input: string) {
    * Literals
    */
   LITERAL.set = or([
+    // Negative number literal: '-' NumberTok
+    and(
+      [consume(Minus), consume(NumberTok)],
+      ([, n]) =>
+        ({ type: "NumberLiteral", value: -toNumber(n) }) as NumberLiteral,
+    ),
+    // Positive number literal
     and(
       [consume(NumberTok)],
       ([n]) => ({ type: "NumberLiteral", value: toNumber(n) }) as NumberLiteral,
@@ -787,11 +799,11 @@ export function parseMessage(input: string): MessageTemplate {
  * - Pipelines:  users | filter(.age > 18) | map(.name) | sort
  *      => f.sort(
  *           f.map(
- *             f.filter(i.users, function(ii){return ii.age > 18}),
- *             function(ii){return ii.name}
+ *             f.filter(i.users, function(v0){return (v0.age > 18)}),
+ *             function(v0){return v0.name}
  *           )
  *         )
- * - filter/map stages introduce a new iteration variable (ii, jj, kk, ...)
+ * - filter/map stages introduce an iteration variable named v{depth} (v0, v1, ...)
  * - Relative paths:
  *     '.' (relative=1) -> current iteration variable
  *     '..' (relative=2) -> parent iteration variable (if any)
@@ -826,7 +838,9 @@ function generateExpression(expr: Expression, ctx: CodeGenContext): string {
     case "Path":
       return generatePath(expr, ctx);
     case "FunctionCall":
-      return `f.${expr.name}(${expr.args.map(a => generateExpression(a, ctx)).join(", ")})`;
+      return `f.${expr.name}(${
+        expr.args.map((a) => generateExpression(a, ctx)).join(", ")
+      })`;
     case "UnaryExpression":
       if (expr.operator === "not") {
         return `!(${generateExpression(expr.argument, ctx)})`;
@@ -834,21 +848,29 @@ function generateExpression(expr: Expression, ctx: CodeGenContext): string {
       return `/* unsupported unary */`;
     case "BinaryExpression":
       if (expr.operator === "&") {
-        return `f.concat(${generateExpression(expr.left, ctx)}, ${generateExpression(expr.right, ctx)})`;
+        return `f.concat(${generateExpression(expr.left, ctx)}, ${
+          generateExpression(expr.right, ctx)
+        })`;
       }
-      return `(${generateExpression(expr.left, ctx)} ${expr.operator} ${generateExpression(expr.right, ctx)})`;
+      return `(${generateExpression(expr.left, ctx)} ${expr.operator} ${
+        generateExpression(expr.right, ctx)
+      })`;
     case "ArrayLiteral":
-      return `[${expr.elements.map(e =>
-        e.type === "RangeLiteral"
-          ? generateRange(e, ctx)
-          : generateExpression(e as Expression, ctx)
-      ).join(", ")}]`;
+      return `[${
+        expr.elements.map((e) =>
+          e.type === "RangeLiteral"
+            ? generateRange(e, ctx)
+            : generateExpression(e as Expression, ctx)
+        ).join(", ")
+      }]`;
     case "RangeLiteral":
       return generateRange(expr, ctx);
     case "ObjectLiteral":
-      return `({${expr.properties.map(p =>
-        JSON.stringify(p.key) + ":" + generateExpression(p.value, ctx)
-      ).join(", ")}})`;
+      return `({${
+        expr.properties.map((p) =>
+          JSON.stringify(p.key) + ":" + generateExpression(p.value, ctx)
+        ).join(", ")
+      }})`;
     case "Pipeline":
       return generatePipeline(expr, ctx);
     default:
@@ -857,7 +879,9 @@ function generateExpression(expr: Expression, ctx: CodeGenContext): string {
 }
 
 function generateRange(r: RangeLiteral, ctx: CodeGenContext): string {
-  return `f.range(${generateExpression(r.start, ctx)}, ${generateExpression(r.end, ctx)})`;
+  return `f.range(${generateExpression(r.start, ctx)}, ${
+    generateExpression(r.end, ctx)
+  })`;
 }
 
 function generatePath(path: PathExpression, ctx: CodeGenContext): string {
@@ -881,7 +905,10 @@ function generatePath(path: PathExpression, ctx: CodeGenContext): string {
   return code;
 }
 
-function generatePipeline(pipe: PipelineExpression, ctx: CodeGenContext): string {
+function generatePipeline(
+  pipe: PipelineExpression,
+  ctx: CodeGenContext,
+): string {
   let acc = generateExpression(pipe.input, ctx);
   const depth = ctx.scopes.length;
   for (const stage of pipe.stages) {
@@ -897,7 +924,10 @@ function generatePipeline(pipe: PipelineExpression, ctx: CodeGenContext): string
       acc = `f.map(${acc}, function(${iterVar}){return ${body}})`;
     } else {
       // Generic stage: f.stageName(acc, ...args)
-      const argList = [acc, ...stage.args.map(a => generateExpression(a, ctx))].join(", ");
+      const argList = [
+        acc,
+        ...stage.args.map((a) => generateExpression(a, ctx)),
+      ].join(", ");
       acc = `f.${stage.name}(${argList})`;
     }
   }
@@ -908,17 +938,17 @@ function attachToString(expr: Expression): void {
   // Depth-first so child nodes already have methods if needed (future extension)
   switch (expr.type) {
     case "ArrayLiteral":
-      expr.elements.forEach(e => {
+      expr.elements.forEach((e) => {
         if (typeof e === "object" && e !== null && "type" in e) {
           attachToString(e as Expression);
         }
       });
       break;
     case "ObjectLiteral":
-      expr.properties.forEach(p => attachToString(p.value));
+      expr.properties.forEach((p) => attachToString(p.value));
       break;
     case "FunctionCall":
-      expr.args.forEach(a => attachToString(a));
+      expr.args.forEach((a) => attachToString(a));
       break;
     case "UnaryExpression":
       attachToString(expr.argument);
@@ -929,10 +959,10 @@ function attachToString(expr: Expression): void {
       break;
     case "Pipeline":
       attachToString(expr.input);
-      expr.stages.forEach(s => s.args.forEach(a => attachToString(a)));
+      expr.stages.forEach((s) => s.args.forEach((a) => attachToString(a)));
       break;
     case "Path":
-      expr.segments.forEach(s => {
+      expr.segments.forEach((s) => {
         if (s.kind === "dynamic") attachToString(s.expr);
       });
       break;

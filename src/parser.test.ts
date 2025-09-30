@@ -37,18 +37,26 @@ describe("parses", () => {
       ["a[b] | upper", "f.upper(i.a[i.b])"],
       ['a[b] | upper("1")', 'f.upper(i.a[i.b], "1")'],
       ["a[b] | filter(.b)", "f.filter(i.a[i.b], function(v0){return v0.b})"],
-      ["null", "i.null"],
-      ["true", "i.true"],
-      ["false", "i.false"],
+      ["null", "null"],
+      ["true", "true"],
+      ["false", "false"],
+      ["nully", "i.nully"],
+      ["truethy", "i.truethy"],
+      ["falsey", "i.falsey"],
+      ["true==false", "(true == false)"],
       ["5", "5"],
       ["5.6", "5.6"],
+      ["-5", "-5"],
+      ["-5.6", "-5.6"],
+      ["-0.25", "-0.25"],
+      ["-5+2", "(-5 + 2)"],
       ['"hello"', '"hello"'],
       ["[1,3,6]", "[1, 3, 6]"],
       ["{a:2}", '({"a":2})'],
       ['{a:[],b:[1,"foo bar %",{}]}', '({"a":[], "b":[1, "foo bar %", ({})]})'],
       [
         '"hello_"&5&true&input.a.b',
-        'f.concat(f.concat(f.concat("hello_", 5), i.true), i.input.a.b)',
+        'f.concat(f.concat(f.concat("hello_", 5), true), i.input.a.b)',
       ],
       [
         "users | filter(.age > 18) | map(.name) | sort",
@@ -213,6 +221,84 @@ describe("dynamic & relative paths", () => {
         },
         { kind: "prop", name: "name" },
       ],
+    });
+  });
+
+  describe("edge cases", () => {
+    it("parses pipeline with final function stage plus arithmetic", () => {
+      const ast = parseQuery("data.values | sum + 1");
+      const gen = ast.toString();
+      expect(gen).toEqual("(f.sum(i.data.values) + 1)");
+    });
+
+    it("parses nested dynamic path expression", () => {
+      const ast = parseQuery("items[input.min + 1].value");
+      const gen = ast.toString();
+      expect(gen).toEqual("i.items[(i.input.min + 1)].value");
+    });
+
+    it("parses range inside array literal with expressions", () => {
+      const ast = parseQuery("[0, a.b, 1..3]");
+      expect(ast.type).toBe("ArrayLiteral");
+      const gen = ast.toString();
+      expect(gen).toEqual("[0, i.a.b, f.range(1, 3)]");
+    });
+
+    it("handles not precedence vs additive", () => {
+      const ast = parseQuery("not a + b");
+      const gen = ast.toString();
+      expect(gen).toEqual(`(!(i.a) + i.b)`);
+    });
+
+    it("deep relative path inside nested filters (syntactic only)", () => {
+      const q = "users | filter(.friends | filter(..age > 18) | len > 0)";
+      const ast = parseQuery(q);
+      expect(ast.type).toBe("Pipeline");
+    });
+  });
+
+  describe("negative / invalid syntax", () => {
+    const invalidQueries = [
+      "",
+      "(",
+      "users | filter(.age > 18",
+      "a..b",
+      '"unterminated',
+      "users | | map(.x)",
+      "1 + * 2",
+      "func(1,,2)",
+      "arr[",
+      "{a:1,}",
+    ];
+
+    for (const iq of invalidQueries) {
+      it(`fails to parse: ${JSON.stringify(iq)}`, () => {
+        expect(() => parseQuery(iq)).toThrow();
+      });
+    }
+  });
+
+  describe("message mode edge/failure cases", () => {
+    it("throws on unterminated embed", () => {
+      expect(() => parseMessage("Hello { user.name")).toThrow();
+    });
+
+    it("parses empty embed as null literal expr producing no error", () => {
+      const tpl = parseMessage("Value: {   }!");
+      // Second part should be embed with NullLiteral
+      const embed = tpl.parts.find((p) => p.kind === "embed") as any;
+      expect(embed.expr).toEqual({ type: "NullLiteral" });
+    });
+
+    it("allows escaped braces alongside real embed", () => {
+      const tpl = parseMessage("\\{ not expr } and real { a }");
+      const textPart = tpl.parts[0];
+      expect(textPart).toEqual({
+        kind: "text",
+        value: "{ not expr } and real ",
+      });
+      const embed = tpl.parts[1] as any;
+      expect(embed.expr.type).toBe("Path");
     });
   });
 
