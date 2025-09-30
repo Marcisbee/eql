@@ -1,6 +1,7 @@
 import { describe, it, test } from "jsr:@std/testing/bdd";
 import { expect } from "jsr:@std/expect";
 import { parseMessage, parseQuery } from "./parser.ts";
+import { generateQueryCode } from "./codegen.ts";
 
 describe("basic literals and paths", () => {
   it("parses simple path", () => {
@@ -43,13 +44,13 @@ describe("parses", () => {
       ["nully", "i.nully"],
       ["truethy", "i.truethy"],
       ["falsey", "i.falsey"],
-      ["true==false", "(true == false)"],
+      ["true==false", 'f._comp("==", true, false)'],
       ["5", "5"],
       ["5.6", "5.6"],
       ["-5", "-5"],
       ["-5.6", "-5.6"],
       ["-0.25", "-0.25"],
-      ["-5+2", "(-5 + 2)"],
+      ["-5+2", 'f._arith("+", -5, 2)'],
       ['"hello"', '"hello"'],
       ["[1,3,6]", "[1, 3, 6]"],
       ["{a:2}", '({"a":2})'],
@@ -60,18 +61,18 @@ describe("parses", () => {
       ],
       [
         "users | filter(.age > 18) | map(.name) | sort",
-        "f.sort(f.map(f.filter(i.users, function(v0){return (v0.age > 18)}), function(v0){return v0.name}))",
+        "f.sort(f.map(f.filter(i.users, function(v0){return f._comp(\">\", v0.age, 18)}), function(v0){return v0.name}))",
       ],
-      ["1+2", "(1 + 2)"],
+      ["1+2", 'f._arith("+", 1, 2)'],
       [
         "1+2/7%(2*5.5+input.max)",
-        "(1 + ((2 / 7) % ((2 * 5.5) + i.input.max)))",
+        'f._arith("+", 1, f._arith("%", f._arith("/", 2, 7), f._arith("+", f._arith("*", 2, 5.5), i.input.max)))',
       ],
     ] satisfies [string, string][]
   ) {
     it(JSON.stringify(input), () => {
       const ast = parseQuery(input);
-      const generated = ast.toString();
+      const generated = generateQueryCode(ast as any);
 
       expect(generated).toEqual(output);
     });
@@ -227,27 +228,27 @@ describe("dynamic & relative paths", () => {
   describe("edge cases", () => {
     it("parses pipeline with final function stage plus arithmetic", () => {
       const ast = parseQuery("data.values | sum + 1");
-      const gen = ast.toString();
-      expect(gen).toEqual("(f.sum(i.data.values) + 1)");
+      const gen = generateQueryCode(ast as any);
+      expect(gen).toEqual('f._arith("+", f.sum(i.data.values), 1)');
     });
 
     it("parses nested dynamic path expression", () => {
       const ast = parseQuery("items[input.min + 1].value");
-      const gen = ast.toString();
-      expect(gen).toEqual("i.items[(i.input.min + 1)].value");
+      const gen = generateQueryCode(ast as any);
+      expect(gen).toEqual("i.items[f._arith(\"+\", i.input.min, 1)].value");
     });
 
     it("parses range inside array literal with expressions", () => {
       const ast = parseQuery("[0, a.b, 1..3]");
       expect(ast.type).toBe("ArrayLiteral");
-      const gen = ast.toString();
+      const gen = generateQueryCode(ast as any);
       expect(gen).toEqual("[0, i.a.b, f.range(1, 3)]");
     });
 
     it("handles not precedence vs additive", () => {
       const ast = parseQuery("not a + b");
-      const gen = ast.toString();
-      expect(gen).toEqual(`(!(i.a) + i.b)`);
+      const gen = generateQueryCode(ast as any);
+      expect(gen).toEqual('f._arith("+", f._not(i.a), i.b)');
     });
 
     it("deep relative path inside nested filters (syntactic only)", () => {

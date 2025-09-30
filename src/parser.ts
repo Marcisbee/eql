@@ -695,9 +695,7 @@ function buildParser(input: string) {
  */
 export function parseQuery(input: string): Expression {
   const { parseExpression } = buildParser(input);
-  const expr = parseExpression();
-  attachToString(expr);
-  return expr;
+  return parseExpression();
 }
 
 /**
@@ -817,167 +815,10 @@ export function parseMessage(input: string): MessageTemplate {
  * f.sort, f.concat, f.range, etc.) must be supplied by the embedding host.
  */
 
-type CodeGenContext = {
-  scopes: string[]; // [current, parent, ...]
+/* Code generation removed from parser.
+ * The parser now only returns raw AST objects.
+ * Code emission is handled in the separate compiler/codegen module.
+ */
+export {
+  /* AST type re-exports (types are declared earlier in this file) */
 };
-
-function nextIterVar(depth: number): string {
-  return `v${depth}`;
-}
-
-function generateExpression(expr: Expression, ctx: CodeGenContext): string {
-  switch (expr.type) {
-    case "NumberLiteral":
-      return String(expr.value);
-    case "StringLiteral":
-      return JSON.stringify(expr.value);
-    case "BooleanLiteral":
-      return expr.value ? "true" : "false";
-    case "NullLiteral":
-      return "null";
-    case "Path":
-      return generatePath(expr, ctx);
-    case "FunctionCall":
-      return `f.${expr.name}(${
-        expr.args.map((a) => generateExpression(a, ctx)).join(", ")
-      })`;
-    case "UnaryExpression":
-      if (expr.operator === "not") {
-        return `!(${generateExpression(expr.argument, ctx)})`;
-      }
-      return `/* unsupported unary */`;
-    case "BinaryExpression":
-      if (expr.operator === "&") {
-        return `f.concat(${generateExpression(expr.left, ctx)}, ${
-          generateExpression(expr.right, ctx)
-        })`;
-      }
-      return `(${generateExpression(expr.left, ctx)} ${expr.operator} ${
-        generateExpression(expr.right, ctx)
-      })`;
-    case "ArrayLiteral":
-      return `[${
-        expr.elements.map((e) =>
-          e.type === "RangeLiteral"
-            ? generateRange(e, ctx)
-            : generateExpression(e as Expression, ctx)
-        ).join(", ")
-      }]`;
-    case "RangeLiteral":
-      return generateRange(expr, ctx);
-    case "ObjectLiteral":
-      return `({${
-        expr.properties.map((p) =>
-          JSON.stringify(p.key) + ":" + generateExpression(p.value, ctx)
-        ).join(", ")
-      }})`;
-    case "Pipeline":
-      return generatePipeline(expr, ctx);
-    default:
-      return "/* unknown node */";
-  }
-}
-
-function generateRange(r: RangeLiteral, ctx: CodeGenContext): string {
-  return `f.range(${generateExpression(r.start, ctx)}, ${
-    generateExpression(r.end, ctx)
-  })`;
-}
-
-function generatePath(path: PathExpression, ctx: CodeGenContext): string {
-  let base: string;
-  if (path.relative === 0) {
-    base = "i";
-  } else {
-    const idx = path.relative - 1;
-    base = ctx.scopes[idx] ?? "undefined";
-  }
-  let code = base;
-  for (const seg of path.segments) {
-    if (seg.kind === "prop") {
-      code += `.${seg.name}`;
-    } else if (seg.kind === "index") {
-      code += `[${seg.index}]`;
-    } else if (seg.kind === "dynamic") {
-      code += `[${generateExpression(seg.expr, ctx)}]`;
-    }
-  }
-  return code;
-}
-
-function generatePipeline(
-  pipe: PipelineExpression,
-  ctx: CodeGenContext,
-): string {
-  let acc = generateExpression(pipe.input, ctx);
-  const depth = ctx.scopes.length;
-  for (const stage of pipe.stages) {
-    if (stage.name === "filter" && stage.args.length === 1) {
-      const iterVar = nextIterVar(depth);
-      const innerCtx: CodeGenContext = { scopes: [iterVar, ...ctx.scopes] };
-      const body = generateExpression(stage.args[0], innerCtx);
-      acc = `f.filter(${acc}, function(${iterVar}){return ${body}})`;
-    } else if (stage.name === "map" && stage.args.length === 1) {
-      const iterVar = nextIterVar(depth);
-      const innerCtx: CodeGenContext = { scopes: [iterVar, ...ctx.scopes] };
-      const body = generateExpression(stage.args[0], innerCtx);
-      acc = `f.map(${acc}, function(${iterVar}){return ${body}})`;
-    } else {
-      // Generic stage: f.stageName(acc, ...args)
-      const argList = [
-        acc,
-        ...stage.args.map((a) => generateExpression(a, ctx)),
-      ].join(", ");
-      acc = `f.${stage.name}(${argList})`;
-    }
-  }
-  return acc;
-}
-
-function attachToString(expr: Expression): void {
-  // Depth-first so child nodes already have methods if needed (future extension)
-  switch (expr.type) {
-    case "ArrayLiteral":
-      expr.elements.forEach((e) => {
-        if (typeof e === "object" && e !== null && "type" in e) {
-          attachToString(e as Expression);
-        }
-      });
-      break;
-    case "ObjectLiteral":
-      expr.properties.forEach((p) => attachToString(p.value));
-      break;
-    case "FunctionCall":
-      expr.args.forEach((a) => attachToString(a));
-      break;
-    case "UnaryExpression":
-      attachToString(expr.argument);
-      break;
-    case "BinaryExpression":
-      attachToString(expr.left);
-      attachToString(expr.right);
-      break;
-    case "Pipeline":
-      attachToString(expr.input);
-      expr.stages.forEach((s) => s.args.forEach((a) => attachToString(a)));
-      break;
-    case "Path":
-      expr.segments.forEach((s) => {
-        if (s.kind === "dynamic") attachToString(s.expr);
-      });
-      break;
-    case "RangeLiteral":
-      attachToString(expr.start);
-      attachToString(expr.end);
-      break;
-  }
-
-  if (!Object.prototype.hasOwnProperty.call(expr, "toString")) {
-    Object.defineProperty(expr, "toString", {
-      value: function () {
-        return generateExpression(expr, { scopes: [] });
-      },
-      enumerable: false,
-    });
-  }
-}

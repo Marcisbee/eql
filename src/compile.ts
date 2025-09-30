@@ -1,42 +1,25 @@
 /**
- * EQL Compiler / Runtime
+ * EQL Compiler
  *
- * Provides:
- *  - compileQuery(source, transformers?)
- *  - compileMessage(source, transformers?)
- *  - Eql class (instance-oriented API)
- *
- * A query is parsed into an AST (via parseQuery) whose .toString() method
- * yields a JavaScript expression referencing:
- *   - i : the input/root data object
- *   - f : a runtime helper/transformer library
- *
- * Compilation wraps that expression into a Function returning the evaluated
- * result with error isolation (runtime errors => null per spec's "null propagation").
- *
- * A message (message mode) is compiled into a function that returns a string,
- * concatenating literal text parts with evaluated embedded expressions,
- * applying the coercion rules from the spec:
- *   null -> ""
- *   number -> decimal string
- *   boolean -> "true"/"false"
- *   string -> as-is
- *   array/object -> JSON stringified
- *
- * The resulting compiled functions expose:
- *   - toString(): the generated JavaScript expression (query) or synthetic
- *     concatenation expression (message), useful for inspection/debugging.
- *   - ast: the original AST (query) or template structure (message)
- *   - source: original EQL source
+ * Flow:
+ *   parser.ts  -> AST
+ *   codegen.ts -> JS expression strings
+ *   compile.ts -> runtime helpers + wrapping into executable Functions
  */
-
 import { parseMessage, parseQuery } from './parser.ts';
+import { generateQueryCode, generateMessageParts } from './codegen.ts';
 
 /** Transformer function signature (avoid `any`). */
 export type TransformerFn = (...args: unknown[]) => unknown;
 
 /** Runtime transformer library map. */
-export type TransformerLibrary = Record<string, TransformerFn>;
+export interface TransformerLibrary {
+  [name: string]: TransformerFn | undefined;
+  _arith?: TransformerFn;
+  _comp?: TransformerFn;
+  _logic?: TransformerFn;
+  _not?: TransformerFn;
+}
 
 /** Options for Eql constructor. */
 export interface EqlOptions {
@@ -431,6 +414,97 @@ export function buildDefaultTransformers(): TransformerLibrary {
     },
   };
 
+  // Attach extended operator helpers (only if not already supplied by user overrides)
+  if (!f._arith) {
+    f._arith = (...args: unknown[]): unknown => {
+      const [op, a, b] = args as [string, unknown, unknown];
+      const toNum = (v: unknown): number | null => {
+        if (typeof v === 'number' && Number.isFinite(v)) return v;
+        if (typeof v === 'boolean') return v ? 1 : 0;
+        return null;
+      };
+      const scalar = (x: unknown, y: unknown): unknown => {
+        const nx = toNum(x);
+        const ny = toNum(y);
+        if (nx === null || ny === null) return null;
+        switch (op) {
+          case '+': return nx + ny;
+          case '-': return nx - ny;
+          case '*': return nx * ny;
+          case '/': return ny === 0 ? null : nx / ny;
+          case '%': return ny === 0 ? null : nx % ny;
+          default: return null;
+        }
+      };
+      if (Array.isArray(a) && Array.isArray(b)) {
+        if (a.length !== b.length) return null;
+        return a.map((v, i) => scalar(v, (b as unknown[])[i]));
+      }
+      if (Array.isArray(a) && !Array.isArray(b)) {
+        return a.map((v) => scalar(v, b));
+      }
+      if (!Array.isArray(a) && Array.isArray(b)) {
+        return (b as unknown[]).map((v) => scalar(a, v));
+      }
+      return scalar(a, b);
+    };
+  }
+  if (!f._comp) {
+    f._comp = (...args: unknown[]): unknown => {
+      const [op, a, b] = args as [string, unknown, unknown];
+      const cmp = (x: unknown, y: unknown): boolean => {
+        switch (op) {
+          case '==': return JSON.stringify(x) === JSON.stringify(y);
+          case '!=': return JSON.stringify(x) !== JSON.stringify(y);
+          case '>': return (x as any) > (y as any);
+            // deno-lint-ignore no-explicit-any
+          case '<': return (x as any) < (y as any);
+            // deno-lint-ignore no-explicit-any
+          case '>=': return (x as any) >= (y as any);
+            // deno-lint-ignore no-explicit-any
+          case '<=': return (x as any) <= (y as any);
+          default: return false;
+        }
+      };
+      if (Array.isArray(a) && Array.isArray(b)) {
+        if (a.length !== b.length) return false;
+        return a.map((v, i) => cmp(v, (b as unknown[])[i]));
+      }
+      if (Array.isArray(a) && !Array.isArray(b)) {
+        return a.map((v) => cmp(v, b));
+      }
+      if (!Array.isArray(a) && Array.isArray(b)) {
+        return (b as unknown[]).map((v) => cmp(a, v));
+      }
+      return cmp(a, b);
+    };
+  }
+  if (!f._logic) {
+    f._logic = (...args: unknown[]): unknown => {
+      const [rawOp, a, b] = args as ['and' | 'or', unknown, unknown];
+      const op = rawOp === 'and' ? 'and' : 'or';
+      const logic = (x: unknown, y: unknown): boolean =>
+        op === 'and' ? !!x && !!y : !!x || !!y;
+      if (Array.isArray(a) && Array.isArray(b)) {
+        if (a.length !== b.length) return false;
+        return a.map((v, i) => logic(v, (b as unknown[])[i]));
+      }
+      if (Array.isArray(a) && !Array.isArray(b)) {
+        return a.map((v) => logic(v, b));
+      }
+      if (!Array.isArray(a) && Array.isArray(b)) {
+        return (b as unknown[]).map((v) => logic(a, v));
+      }
+      return logic(a, b);
+    };
+  }
+  if (!f._not) {
+    f._not = (...args: unknown[]): unknown => {
+      const [x] = args;
+      if (Array.isArray(x)) return x.map((v) => !v);
+      return !x;
+    };
+  }
   return f;
 }
 
@@ -531,20 +605,7 @@ function buildMessageExecutor(
  * @param transformers (optional) additional / overriding transformers.
  * @returns compiled function(input)
  */
-export function compileQuery(
-  source: string,
-  transformers?: TransformerLibrary,
-): CompiledQuery {
-  const ast = parseQuery(source) as unknown as { toString(): string };
-  const lib = Object.assign(buildDefaultTransformers(), transformers ?? {});
-  const jsExpr = ast.toString();
-  const exec = buildQueryExecutor(jsExpr, lib) as CompiledQuery;
-  return attachFunctionMetadata(exec, {
-    code: jsExpr,
-    ast,
-    source,
-  });
-}
+/* Removed initial compileQuery (basic semantics) in favor of extended operator version defined later */
 
 /**
  * Compile a message template into an executable function returning a string.
@@ -553,44 +614,7 @@ export function compileQuery(
  * @param transformers Optional additional/overriding transformers.
  * @returns compiled message function(input) => string
  */
-export function compileMessage(
-  source: string,
-  transformers?: TransformerLibrary,
-): CompiledMessage {
-  const tpl = parseMessage(source) as {
-    type: string;
-    parts: Array<{ kind: 'text'; value: string } | { kind: 'embed'; expr: { toString(): string } }>;
-  };
-
-  const lib = Object.assign(buildDefaultTransformers(), transformers ?? {});
-
-  // Build piece list (JS code strings).
-  const pieces: { code: string; isExpr: boolean }[] = [];
-  for (const part of tpl.parts) {
-    if (part.kind === 'text') {
-      pieces.push({
-        code: JSON.stringify(part.value),
-        isExpr: false,
-      });
-    } else {
-      pieces.push({
-        code: part.expr.toString(),
-        isExpr: true,
-      });
-    }
-  }
-
-  const exec = buildMessageExecutor(pieces, lib) as CompiledMessage;
-
-  // Construct synthetic code representation for toString()
-  const synthetic = pieces.map((p) => p.isExpr ? `(${p.code})` : p.code).join(' + ');
-
-  return attachFunctionMetadata(exec, {
-    code: synthetic,
-    ast: tpl,
-    source,
-  });
-}
+/* Removed initial compileMessage (basic semantics) in favor of extended operator version defined later */
 
 /* ============================================================
  * Eql Class (Instance API)
@@ -601,59 +625,23 @@ export function compileMessage(
  * library (built-ins + user supplied overrides).
  */
 export class Eql {
-  private readonly transformers: TransformerLibrary;
+  protected readonly _transformers: TransformerLibrary;
 
   /**
    * Construct a new Eql instance.
    */
   constructor(options?: EqlOptions) {
-    this.transformers = Object.assign(
+    this._transformers = Object.assign(
       buildDefaultTransformers(),
       options?.transformers ?? {},
     );
   }
 
-  /**
-   * Compile a query using instance transformers.
-   */
-  compileQuery(source: string): CompiledQuery {
-    const ast = parseQuery(source) as unknown as { toString(): string };
-    const jsExpr = ast.toString();
-    const exec = buildQueryExecutor(jsExpr, this.transformers) as CompiledQuery;
-    return attachFunctionMetadata(exec, {
-      code: jsExpr,
-      ast,
-      source,
-    });
-  }
+  // (methods added via prototype patch & interface merge below)
 
-  /**
-   * Compile a message template using instance transformers.
-   */
-  compileMessage(source: string): CompiledMessage {
-    const tpl = parseMessage(source) as {
-      type: string;
-      parts: Array<{ kind: 'text'; value: string } | { kind: 'embed'; expr: { toString(): string } }>;
-    };
 
-    const pieces: { code: string; isExpr: boolean }[] = [];
-    for (const part of tpl.parts) {
-      if (part.kind === 'text') {
-        pieces.push({ code: JSON.stringify(part.value), isExpr: false });
-      } else {
-        pieces.push({ code: part.expr.toString(), isExpr: true });
-      }
-    }
 
-    const exec = buildMessageExecutor(pieces, this.transformers) as CompiledMessage;
-    const synthetic = pieces.map((p) => p.isExpr ? `(${p.code})` : p.code).join(' + ');
 
-    return attachFunctionMetadata(exec, {
-      code: synthetic,
-      ast: tpl,
-      source,
-    });
-  }
 
   /**
    * Static convenience compile (query).
@@ -692,3 +680,97 @@ export class Eql {
  * const msg = eql.compileMessage("Ages: { users | map(.age) | join(\",\") }");
  * console.log(msg({ users:[{age:2},{age:5}] }));
  */
+
+/* ============================================================
+ * Enhanced Array / Logical / Comparison Semantics
+ * ============================================================
+ *
+ * We add a custom code generator for compileQuery/compileMessage that emits
+ * helper calls (f._arith / f._comp / f._logic / f._not) instead of relying
+ * on native JS operators so we can implement:
+ *  - Arithmetic: element-wise with scalar broadcast (+ - * / %)
+ *    * array op array (same length) => element-wise
+ *    * array op scalar OR scalar op array => broadcast scalar
+ *    * length mismatch => null
+ *  - Comparisons (== != > < >= <=):
+ *    * element-wise / broadcast producing boolean arrays
+ *    * length mismatch => false
+ *  - Logical (and / or):
+ *    * element-wise / broadcast boolean logic
+ *    * length mismatch => false
+ *  - not:
+ *    * array => element-wise negation
+ *    * scalar => boolean negation
+ *
+ * Existing string concatenation (&) keeps using f.concat.
+ * Other parts (range, filter/map pipelines, dynamic paths) are
+ * regenerated here (mirroring parser.ts approach) so new semantics
+ * apply uniformly.
+ *
+ * NOTE:
+ *  We redefine compileQuery / compileMessage below; earlier exports remain
+ *  but will be shadowed by these updated definitions.
+ */
+
+/**
+ * Install extended operator helpers onto a transformer library if absent.
+ */
+// ensureExtendedOperators removed: operator helpers now always present via buildDefaultTransformers()
+
+// Legacy inline code generation removed (migrated to codegen.ts)
+
+/**
+ * Redefined compileQuery with extended operators.
+ */
+export function compileQuery(
+  source: string,
+  transformers?: TransformerLibrary,
+): CompiledQuery {
+  const ast = parseQuery(source);
+  const lib = Object.assign(buildDefaultTransformers(), transformers ?? {});
+  const jsExpr = generateQueryCode(ast as any);
+  const exec = buildQueryExecutor(jsExpr, lib) as CompiledQuery;
+  return attachFunctionMetadata(exec, { code: jsExpr, ast, source });
+}
+
+/**
+ * Redefined compileMessage so embedded expressions also use extended semantics.
+ */
+
+// Declare instance method types (merged declaration) so prototype patch is typed.
+export interface Eql {
+  compileQuery(source: string): CompiledQuery;
+  compileMessage(source: string): CompiledMessage;
+}
+export function compileMessage(
+  source: string,
+  transformers?: TransformerLibrary,
+): CompiledMessage {
+  const tpl = parseMessage(source);
+  const lib = Object.assign(buildDefaultTransformers(), transformers ?? {});
+  const pieces = generateMessageParts(tpl as any);
+  const exec = buildMessageExecutor(pieces, lib) as CompiledMessage;
+  const synthetic = pieces.map((p) => p.isExpr ? `(${p.code})` : p.code).join(' + ');
+  return attachFunctionMetadata(exec, { code: synthetic, ast: tpl, source });
+}
+
+/**
+ * Extend Eql instance methods to use new compile functions.
+ */
+Eql.prototype.compileQuery = function (this: Eql, source: string): CompiledQuery {
+  const ast = parseQuery(source);
+  const jsExpr = generateQueryCode(ast as any);
+  const exec = buildQueryExecutor(jsExpr, this._transformers) as CompiledQuery;
+  return attachFunctionMetadata(exec, { code: jsExpr, ast, source });
+};
+
+Eql.prototype.compileMessage = function (
+  this: Eql,
+  source: string,
+): CompiledMessage {
+  const tpl = parseMessage(source);
+  const pieces = generateMessageParts(tpl as any);
+  const exec = buildMessageExecutor(pieces, this._transformers) as CompiledMessage;
+  const synthetic = pieces.map((p) => p.isExpr ? `(${p.code})` : p.code).join(' + ');
+  return attachFunctionMetadata(exec, { code: synthetic, ast: tpl, source });
+};
