@@ -27,7 +27,7 @@ describe("basic literals and paths", () => {
   });
 });
 
-describe("toString code generation", () => {
+describe("parses", () => {
   for (
     const [input, output] of [
       ["foo", "i.foo"],
@@ -61,7 +61,7 @@ describe("toString code generation", () => {
       ],
     ] satisfies [string, string][]
   ) {
-    it(`handles ${JSON.stringify(input)}`, () => {
+    it(JSON.stringify(input), () => {
       const ast = parseQuery(input);
       const generated = ast.toString();
 
