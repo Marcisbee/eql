@@ -3,7 +3,6 @@
     "dev": "deno run --watch src/main.ts"
   },
   "imports": {
-    "@std/assert": "jsr:@std/assert@1",
     "nanolex": "npm:nanolex@^0.7.0"
   }
 }
