@@ -1,4 +1,4 @@
-import { describe, it } from "jsr:@std/testing/bdd";
+import { describe, it, test } from "jsr:@std/testing/bdd";
 import { expect } from "jsr:@std/expect";
 import { parseMessage, parseQuery } from "./parser.ts";
 
@@ -25,6 +25,49 @@ describe("basic literals and paths", () => {
     const ast = parseQuery('"hello \\"world\\""');
     expect(ast).toEqual({ type: "StringLiteral", value: 'hello "world"' });
   });
+});
+
+describe("toString code generation", () => {
+  for (
+    const [input, output] of [
+      ["foo", "i.foo"],
+      ["a.b.c", "i.a.b.c"],
+      ["a[1]", "i.a[1]"],
+      ["a[b]", "i.a[i.b]"],
+      ["a[b] | upper", "f.upper(i.a[i.b])"],
+      ['a[b] | upper("1")', 'f.upper(i.a[i.b], "1")'],
+      ["a[b] | filter(.b)", "f.filter(i.a[i.b], function(v0){return v0.b})"],
+      ["null", "i.null"],
+      ["true", "i.true"],
+      ["false", "i.false"],
+      ["5", "5"],
+      ["5.6", "5.6"],
+      ['"hello"', '"hello"'],
+      ["[1,3,6]", "[1, 3, 6]"],
+      ["{a:2}", '({"a":2})'],
+      ['{a:[],b:[1,"foo bar %",{}]}', '({"a":[], "b":[1, "foo bar %", ({})]})'],
+      [
+        '"hello_"&5&true&input.a.b',
+        'f.concat(f.concat(f.concat("hello_", 5), i.true), i.input.a.b)',
+      ],
+      [
+        "users | filter(.age > 18) | map(.name) | sort",
+        "f.sort(f.map(f.filter(i.users, function(v0){return (v0.age > 18)}), function(v0){return v0.name}))",
+      ],
+      ["1+2", "(1 + 2)"],
+      [
+        "1+2/7%(2*5.5+input.max)",
+        "(1 + ((2 / 7) % ((2 * 5.5) + i.input.max)))",
+      ],
+    ] satisfies [string, string][]
+  ) {
+    it(`handles ${JSON.stringify(input)}`, () => {
+      const ast = parseQuery(input);
+      const generated = ast.toString();
+
+      expect(generated).toEqual(output);
+    });
+  }
 });
 
 describe("arrays, objects, ranges", () => {
