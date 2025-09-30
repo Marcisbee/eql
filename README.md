@@ -8,7 +8,8 @@ Composable. Broadcast‑aware. Two modes: query + message.
 - Need more than plain `a.b.c` paths, less than “let users run JS”.
 - Deterministic + side‑effect free (except `now()`).
 - Single consistent syntax (no aliases).
-- Returns a clean AST you can analyze before compiling.
+- Returns a clean AST you can analyze before compiling (metadata attached to
+  compiled functions).
 
 ## Quick Glance
 
@@ -34,20 +35,28 @@ Message mode:
 
 ## Install / Use
 
-```ts
-import { compileMessage, compileQuery, Eql } from "./src/compile.ts";
+Create an `Eql` instance and compile via its methods. (The former standalone
+`compileQuery` / `compileMessage` helpers have been removed; always go through
+an instance.)
 
-const q = compileQuery("users | map(.age) | sum");
+```ts
+import { Eql } from "./src/compile.ts";
+
+const eql = new Eql();
+
+// Query (expression) mode
+const q = eql.compileQuery("users | map(.age) | sum");
 q({ users: [{ age: 2 }, { age: 5 }] }); // 7
 
-const m = compileMessage("Adults: { users | filter(.age > 17) | len }");
+// Message (template) mode
+const m = eql.compileMessage("Adults: { users | filter(.age > 17) | len }");
 m({ users: [{ age: 10 }, { age: 20 }] }); // "Adults: 1"
 
-const eql = new Eql({
+// With custom transformer
+const eql2 = new Eql({
   transformers: { double: (v) => (typeof v === "number" ? v * 2 : null) },
 });
-
-const q2 = eql.compileQuery("(value + 1) | double");
+const q2 = eql2.compileQuery("(value + 1) | double");
 q2({ value: 5 }); // 12
 ```
 
@@ -243,7 +252,8 @@ AST is a plain JSON tree:
 }
 ```
 
-Feed this into `generateQueryCode(ast)` if you want the code string directly.
+You can feed this into `generateQueryCode(ast)` if you want the code string
+directly (advanced use).
 
 ## Performance Notes
 
