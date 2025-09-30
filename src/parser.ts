@@ -819,6 +819,4 @@ export function parseMessage(input: string): MessageTemplate {
  * The parser now only returns raw AST objects.
  * Code emission is handled in the separate compiler/codegen module.
  */
-export {
-  /* AST type re-exports (types are declared earlier in this file) */
-};
+export {}; /* AST type re-exports (types are declared earlier in this file) */

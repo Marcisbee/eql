@@ -6,8 +6,8 @@
  *   codegen.ts -> JS expression strings
  *   compile.ts -> runtime helpers + wrapping into executable Functions
  */
-import { parseMessage, parseQuery } from './parser.ts';
-import { generateQueryCode, generateMessageParts } from './codegen.ts';
+import { parseMessage, parseQuery } from "./parser.ts";
+import { generateMessageParts, generateQueryCode } from "./codegen.ts";
 
 /** Transformer function signature (avoid `any`). */
 export type TransformerFn = (...args: unknown[]) => unknown;
@@ -50,8 +50,8 @@ export interface CompiledMessage {
  * Safe numeric conversion.
  */
 function toNumber(v: unknown): number | null {
-  if (typeof v === 'number' && Number.isFinite(v)) return v;
-  if (typeof v === 'boolean') return v ? 1 : 0;
+  if (typeof v === "number" && Number.isFinite(v)) return v;
+  if (typeof v === "boolean") return v ? 1 : 0;
   return null;
 }
 
@@ -67,7 +67,7 @@ function _isArray(v: unknown): v is unknown[] {
  */
 function deepEqual(a: unknown, b: unknown): boolean {
   if (a === b) return true;
-  if (a && b && typeof a === 'object' && typeof b === 'object') {
+  if (a && b && typeof a === "object" && typeof b === "object") {
     try {
       return JSON.stringify(a) === JSON.stringify(b);
     } catch {
@@ -81,15 +81,15 @@ function deepEqual(a: unknown, b: unknown): boolean {
  * Coerce value to string for message embeddings (per spec).
  */
 function _coerceMessageValue(v: unknown): string {
-  if (v === null || v === undefined) return '';
+  if (v === null || v === undefined) return "";
   const t = typeof v;
-  if (t === 'string') return v as string;
-  if (t === 'number') return Number.isFinite(v as number) ? String(v) : '';
-  if (t === 'boolean') return (v as boolean) ? 'true' : 'false';
+  if (t === "string") return v as string;
+  if (t === "number") return Number.isFinite(v as number) ? String(v) : "";
+  if (t === "boolean") return (v as boolean) ? "true" : "false";
   try {
     return JSON.stringify(v);
   } catch {
-    return '';
+    return "";
   }
 }
 
@@ -109,7 +109,7 @@ export function buildDefaultTransformers(): TransformerLibrary {
     // --- Core pipeline helpers (referenced by code generator) ---
     filter: ((...args: unknown[]) => {
       const [arr, predicate] = args;
-      if (!Array.isArray(arr) || typeof predicate !== 'function') return null;
+      if (!Array.isArray(arr) || typeof predicate !== "function") return null;
       const out: unknown[] = [];
       for (const el of arr) {
         let keep = false;
@@ -124,7 +124,7 @@ export function buildDefaultTransformers(): TransformerLibrary {
     }) as TransformerFn,
     map: ((...args: unknown[]) => {
       const [arr, mapper] = args;
-      if (!Array.isArray(arr) || typeof mapper !== 'function') return null;
+      if (!Array.isArray(arr) || typeof mapper !== "function") return null;
       const out: unknown[] = [];
       for (const el of arr) {
         try {
@@ -160,14 +160,14 @@ export function buildDefaultTransformers(): TransformerLibrary {
     concat(a: unknown, b: unknown): unknown {
       // '&' operator semantics: stringify non-strings with JSON (except null)
       function toStr(x: unknown): string {
-        if (x === null) return 'null';
-        if (x === undefined) return 'null';
-        if (typeof x === 'string') return x;
-        if (typeof x === 'number' || typeof x === 'boolean') return String(x);
+        if (x === null) return "null";
+        if (x === undefined) return "null";
+        if (typeof x === "string") return x;
+        if (typeof x === "number" || typeof x === "boolean") return String(x);
         try {
           return JSON.stringify(x);
         } catch {
-          return 'null';
+          return "null";
         }
       }
       return toStr(a) + toStr(b);
@@ -175,23 +175,23 @@ export function buildDefaultTransformers(): TransformerLibrary {
 
     // --- String functions ---
     upper(v: unknown): unknown {
-      return typeof v === 'string' ? v.toUpperCase() : null;
+      return typeof v === "string" ? v.toUpperCase() : null;
     },
     lower(v: unknown): unknown {
-      return typeof v === 'string' ? v.toLowerCase() : null;
+      return typeof v === "string" ? v.toLowerCase() : null;
     },
     trim(v: unknown): unknown {
-      return typeof v === 'string' ? v.trim() : null;
+      return typeof v === "string" ? v.trim() : null;
     },
     contains(str: unknown, substr: unknown): unknown {
-      return (typeof str === 'string' && typeof substr === 'string')
+      return (typeof str === "string" && typeof substr === "string")
         ? str.includes(substr)
         : null;
     },
     replace(str: unknown, oldSub: unknown, newSub: unknown): unknown {
       if (
-        typeof str === 'string' && typeof oldSub === 'string' &&
-        typeof newSub === 'string'
+        typeof str === "string" && typeof oldSub === "string" &&
+        typeof newSub === "string"
       ) {
         return str.split(oldSub).join(newSub);
       }
@@ -201,18 +201,18 @@ export function buildDefaultTransformers(): TransformerLibrary {
       const s = toNumber(start) ?? 0;
       const e = toNumber(end) ?? undefined;
       if (Array.isArray(value)) return value.slice(s, e);
-      if (typeof value === 'string') return value.slice(s, e);
+      if (typeof value === "string") return value.slice(s, e);
       return null;
     },
     join(arr: unknown, sep: unknown): unknown {
       if (!Array.isArray(arr)) return null;
-      return arr.map((x) => (x == null ? '' : String(x))).join(
-        typeof sep === 'string' ? sep : ', ',
+      return arr.map((x) => (x == null ? "" : String(x))).join(
+        typeof sep === "string" ? sep : ", ",
       );
     },
     concatstr(...parts: unknown[]): unknown {
       // Non-spec convenience (not used by code generator)
-      return parts.map((p) => (p == null ? '' : String(p))).join('');
+      return parts.map((p) => (p == null ? "" : String(p))).join("");
     },
 
     // --- Aggregates / numeric ---
@@ -265,8 +265,8 @@ export function buildDefaultTransformers(): TransformerLibrary {
       return result;
     },
     len(v: unknown): unknown {
-      if (Array.isArray(v) || typeof v === 'string') return v.length;
-      if (v && typeof v === 'object') {
+      if (Array.isArray(v) || typeof v === "string") return v.length;
+      if (v && typeof v === "object") {
         try {
           return Object.keys(v as Record<string, unknown>).length;
         } catch {
@@ -356,16 +356,16 @@ export function buildDefaultTransformers(): TransformerLibrary {
       return v === null || v === undefined;
     },
     is_number(v: unknown): unknown {
-      return typeof v === 'number' && Number.isFinite(v);
+      return typeof v === "number" && Number.isFinite(v);
     },
     is_string(v: unknown): unknown {
-      return typeof v === 'string';
+      return typeof v === "string";
     },
     is_array(v: unknown): unknown {
       return Array.isArray(v);
     },
     is_object(v: unknown): unknown {
-      return !!v && typeof v === 'object' && !Array.isArray(v);
+      return !!v && typeof v === "object" && !Array.isArray(v);
     },
     exists(v: unknown): unknown {
       return v !== null && v !== undefined;
@@ -373,7 +373,7 @@ export function buildDefaultTransformers(): TransformerLibrary {
 
     // --- Date / time (minimal) ---
     date(v: unknown): unknown {
-      if (typeof v === 'string') {
+      if (typeof v === "string") {
         const d = new Date(v);
         return isNaN(d.getTime()) ? null : d;
       }
@@ -386,9 +386,9 @@ export function buildDefaultTransformers(): TransformerLibrary {
       if (!(a instanceof Date) || !(b instanceof Date)) return null;
       const ms = a.getTime() - b.getTime();
       switch (unit) {
-        case 'days':
+        case "days":
           return ms / 86400000;
-        case 'hours':
+        case "hours":
           return ms / 3600000;
         default:
           return ms;
@@ -396,14 +396,14 @@ export function buildDefaultTransformers(): TransformerLibrary {
     },
     format(d: unknown, pattern: unknown): unknown {
       if (!(d instanceof Date)) return null;
-      if (typeof pattern !== 'string') return null;
+      if (typeof pattern !== "string") return null;
       // Very small pattern support
-      const yyyy = d.getUTCFullYear().toString().padStart(4, '0');
-      const mm = (d.getUTCMonth() + 1).toString().padStart(2, '0');
-      const dd = d.getUTCDate().toString().padStart(2, '0');
-      const HH = d.getUTCHours().toString().padStart(2, '0');
-      const MM = d.getUTCMinutes().toString().padStart(2, '0');
-      const SS = d.getUTCSeconds().toString().padStart(2, '0');
+      const yyyy = d.getUTCFullYear().toString().padStart(4, "0");
+      const mm = (d.getUTCMonth() + 1).toString().padStart(2, "0");
+      const dd = d.getUTCDate().toString().padStart(2, "0");
+      const HH = d.getUTCHours().toString().padStart(2, "0");
+      const MM = d.getUTCMinutes().toString().padStart(2, "0");
+      const SS = d.getUTCSeconds().toString().padStart(2, "0");
       return pattern
         .replace(/YYYY/g, yyyy)
         .replace(/MM/g, mm)
@@ -419,8 +419,8 @@ export function buildDefaultTransformers(): TransformerLibrary {
     f._arith = (...args: unknown[]): unknown => {
       const [op, a, b] = args as [string, unknown, unknown];
       const toNum = (v: unknown): number | null => {
-        if (typeof v === 'number' && Number.isFinite(v)) return v;
-        if (typeof v === 'boolean') return v ? 1 : 0;
+        if (typeof v === "number" && Number.isFinite(v)) return v;
+        if (typeof v === "boolean") return v ? 1 : 0;
         return null;
       };
       const scalar = (x: unknown, y: unknown): unknown => {
@@ -428,12 +428,18 @@ export function buildDefaultTransformers(): TransformerLibrary {
         const ny = toNum(y);
         if (nx === null || ny === null) return null;
         switch (op) {
-          case '+': return nx + ny;
-          case '-': return nx - ny;
-          case '*': return nx * ny;
-          case '/': return ny === 0 ? null : nx / ny;
-          case '%': return ny === 0 ? null : nx % ny;
-          default: return null;
+          case "+":
+            return nx + ny;
+          case "-":
+            return nx - ny;
+          case "*":
+            return nx * ny;
+          case "/":
+            return ny === 0 ? null : nx / ny;
+          case "%":
+            return ny === 0 ? null : nx % ny;
+          default:
+            return null;
         }
       };
       if (Array.isArray(a) && Array.isArray(b)) {
@@ -454,16 +460,23 @@ export function buildDefaultTransformers(): TransformerLibrary {
       const [op, a, b] = args as [string, unknown, unknown];
       const cmp = (x: unknown, y: unknown): boolean => {
         switch (op) {
-          case '==': return JSON.stringify(x) === JSON.stringify(y);
-          case '!=': return JSON.stringify(x) !== JSON.stringify(y);
-          case '>': return (x as any) > (y as any);
+          case "==":
+            return JSON.stringify(x) === JSON.stringify(y);
+          case "!=":
+            return JSON.stringify(x) !== JSON.stringify(y);
+          case ">":
+            return (x as any) > (y as any);
             // deno-lint-ignore no-explicit-any
-          case '<': return (x as any) < (y as any);
+          case "<":
+            return (x as any) < (y as any);
             // deno-lint-ignore no-explicit-any
-          case '>=': return (x as any) >= (y as any);
+          case ">=":
+            return (x as any) >= (y as any);
             // deno-lint-ignore no-explicit-any
-          case '<=': return (x as any) <= (y as any);
-          default: return false;
+          case "<=":
+            return (x as any) <= (y as any);
+          default:
+            return false;
         }
       };
       if (Array.isArray(a) && Array.isArray(b)) {
@@ -481,10 +494,10 @@ export function buildDefaultTransformers(): TransformerLibrary {
   }
   if (!f._logic) {
     f._logic = (...args: unknown[]): unknown => {
-      const [rawOp, a, b] = args as ['and' | 'or', unknown, unknown];
-      const op = rawOp === 'and' ? 'and' : 'or';
+      const [rawOp, a, b] = args as ["and" | "or", unknown, unknown];
+      const op = rawOp === "and" ? "and" : "or";
       const logic = (x: unknown, y: unknown): boolean =>
-        op === 'and' ? !!x && !!y : !!x || !!y;
+        op === "and" ? !!x && !!y : !!x || !!y;
       if (Array.isArray(a) && Array.isArray(b)) {
         if (a.length !== b.length) return false;
         return a.map((v, i) => logic(v, (b as unknown[])[i]));
@@ -546,7 +559,7 @@ function buildQueryExecutor(
   // Wrap in try/catch to yield null on runtime errors.
   // eslint-disable-next-line no-new-func
   const fn = new Function(
-    'f',
+    "f",
     `return function(i){
       try {
         return (${jsExpr});
@@ -568,7 +581,7 @@ function buildMessageExecutor(
   // We'll define a helper inside the generated function for coercion.
   const concatCode = pieces.map((p) =>
     p.isExpr ? `__parts.push(__coerce(${p.code}));` : `__parts.push(${p.code});`
-  ).join('\n');
+  ).join("\n");
 
   const full = `
     return function(i){
@@ -590,7 +603,7 @@ function buildMessageExecutor(
     };
   `;
   // eslint-disable-next-line no-new-func
-  const fn = new Function('f', full)(lib) as (i: unknown) => string;
+  const fn = new Function("f", full)(lib) as (i: unknown) => string;
   return fn;
 }
 
@@ -638,10 +651,6 @@ export class Eql {
   }
 
   // (methods added via prototype patch & interface merge below)
-
-
-
-
 
   /**
    * Static convenience compile (query).
@@ -750,14 +759,19 @@ export function compileMessage(
   const lib = Object.assign(buildDefaultTransformers(), transformers ?? {});
   const pieces = generateMessageParts(tpl as any);
   const exec = buildMessageExecutor(pieces, lib) as CompiledMessage;
-  const synthetic = pieces.map((p) => p.isExpr ? `(${p.code})` : p.code).join(' + ');
+  const synthetic = pieces.map((p) => p.isExpr ? `(${p.code})` : p.code).join(
+    " + ",
+  );
   return attachFunctionMetadata(exec, { code: synthetic, ast: tpl, source });
 }
 
 /**
  * Extend Eql instance methods to use new compile functions.
  */
-Eql.prototype.compileQuery = function (this: Eql, source: string): CompiledQuery {
+Eql.prototype.compileQuery = function (
+  this: Eql,
+  source: string,
+): CompiledQuery {
   const ast = parseQuery(source);
   const jsExpr = generateQueryCode(ast as any);
   const exec = buildQueryExecutor(jsExpr, this._transformers) as CompiledQuery;
@@ -770,7 +784,12 @@ Eql.prototype.compileMessage = function (
 ): CompiledMessage {
   const tpl = parseMessage(source);
   const pieces = generateMessageParts(tpl as any);
-  const exec = buildMessageExecutor(pieces, this._transformers) as CompiledMessage;
-  const synthetic = pieces.map((p) => p.isExpr ? `(${p.code})` : p.code).join(' + ');
+  const exec = buildMessageExecutor(
+    pieces,
+    this._transformers,
+  ) as CompiledMessage;
+  const synthetic = pieces.map((p) => p.isExpr ? `(${p.code})` : p.code).join(
+    " + ",
+  );
   return attachFunctionMetadata(exec, { code: synthetic, ast: tpl, source });
 };

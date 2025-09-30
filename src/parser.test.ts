@@ -61,7 +61,7 @@ describe("parses", () => {
       ],
       [
         "users | filter(.age > 18) | map(.name) | sort",
-        "f.sort(f.map(f.filter(i.users, function(v0){return f._comp(\">\", v0.age, 18)}), function(v0){return v0.name}))",
+        'f.sort(f.map(f.filter(i.users, function(v0){return f._comp(">", v0.age, 18)}), function(v0){return v0.name}))',
       ],
       ["1+2", 'f._arith("+", 1, 2)'],
       [
@@ -235,7 +235,7 @@ describe("dynamic & relative paths", () => {
     it("parses nested dynamic path expression", () => {
       const ast = parseQuery("items[input.min + 1].value");
       const gen = generateQueryCode(ast as any);
-      expect(gen).toEqual("i.items[f._arith(\"+\", i.input.min, 1)].value");
+      expect(gen).toEqual('i.items[f._arith("+", i.input.min, 1)].value');
     });
 
     it("parses range inside array literal with expressions", () => {
