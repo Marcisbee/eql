@@ -580,7 +580,9 @@ function buildMessageExecutor(
     };
   `;
   // eslint-disable-next-line no-new-func
-  const fn = new Function("f","__coerce", full)(lib, _coerceMessageValue) as (i: unknown) => string;
+  const fn = new Function("f", "__coerce", full)(lib, _coerceMessageValue) as (
+    i: unknown,
+  ) => string;
   return fn;
 }
 
