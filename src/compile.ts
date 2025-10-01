@@ -52,13 +52,6 @@ function toNumber(v: unknown): number | null {
 }
 
 /**
- * Determine if value is an array of primitives for aggregator usage.
- */
-function _isArray(v: unknown): v is unknown[] {
-  return Array.isArray(v);
-}
-
-/**
  * Deep equality (simple; JSON stringify fallback for objects).
  */
 function deepEqual(a: unknown, b: unknown): boolean {
@@ -570,7 +563,7 @@ function buildMessageExecutor(
   pieces: { code: string; isExpr: boolean }[],
   lib: TransformerLibrary,
 ): (i: unknown) => string {
-  // We'll define a helper inside the generated function for coercion.
+  // Use shared _coerceMessageValue helper (passed into generated function).
   const concatCode = pieces.map((p) =>
     p.isExpr ? `__parts.push(__coerce(${p.code}));` : `__parts.push(${p.code});`
   ).join("\n");
@@ -578,14 +571,6 @@ function buildMessageExecutor(
   const full = `
     return function(i){
       const __parts = [];
-      function __coerce(v){
-        if(v===null||v===undefined) return "";
-        const t = typeof v;
-        if(t==="string") return v;
-        if(t==="number") return Number.isFinite(v) ? String(v) : "";
-        if(t==="boolean") return v ? "true":"false";
-        try { return JSON.stringify(v); } catch { return ""; }
-      }
       try {
         ${concatCode}
         return __parts.join("");
@@ -595,7 +580,7 @@ function buildMessageExecutor(
     };
   `;
   // eslint-disable-next-line no-new-func
-  const fn = new Function("f", full)(lib) as (i: unknown) => string;
+  const fn = new Function("f","__coerce", full)(lib, _coerceMessageValue) as (i: unknown) => string;
   return fn;
 }
 
