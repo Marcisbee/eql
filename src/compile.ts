@@ -83,11 +83,116 @@ function _coerceMessageValue(v: unknown): string {
 }
 
 /**
- * Ensure array semantics for arithmetic / logical broadcast if desired.
- * (Current code generator uses native JS operators; advanced array semantics
- * from the spec would require changing code generation to call helper
- * functions. This is a placeholder for future enhancement.)
+ * Coercion specifically for concat semantics (null/undefined => 'null').
  */
+function coerceForConcat(v: unknown): string {
+  if (v === null || v === undefined) return "null";
+  if (typeof v === "string") return v;
+  if (typeof v === "number" || typeof v === "boolean") return String(v);
+  try {
+    return JSON.stringify(v);
+  } catch {
+    return "null";
+  }
+}
+
+/**
+ * Broadcast binary operation across scalar/array combinations.
+ * mismatchValue is returned when both are arrays of differing length.
+ */
+function broadcastBinary(
+  a: unknown,
+  b: unknown,
+  fn: (x: unknown, y: unknown) => unknown,
+  mismatchValue: unknown,
+): unknown {
+  const aArr = Array.isArray(a);
+  const bArr = Array.isArray(b);
+  if (aArr && bArr) {
+    const ax = a as unknown[];
+    const bx = b as unknown[];
+    if (ax.length !== bx.length) return mismatchValue;
+    return ax.map((v, i) => fn(v, bx[i]));
+  }
+  if (aArr) return (a as unknown[]).map((v) => fn(v, b));
+  if (bArr) return (b as unknown[]).map((v) => fn(a, v));
+  return fn(a, b);
+}
+
+/**
+ * Comparison helper using deepEqual for equality semantics.
+ */
+function compareValues(op: string, a: unknown, b: unknown): boolean {
+  switch (op) {
+    case "==":
+      return deepEqual(a, b);
+    case "!=":
+      return !deepEqual(a, b);
+    case ">":
+    case "<":
+    case ">=":
+    case "<=": {
+      const an = toNumber(a);
+      const bn = toNumber(b);
+      const left: unknown = (an !== null && bn !== null) ? an : a as unknown;
+      const right: unknown = (an !== null && bn !== null) ? bn : b as unknown;
+      // Fallback to < and > JavaScript semantics.
+      switch (op) {
+        case ">":
+          // deno-lint-ignore no-explicit-any
+          return (left as any) > (right as any);
+        case "<":
+          // deno-lint-ignore no-explicit-any
+          return (left as any) < (right as any);
+        case ">=":
+          // deno-lint-ignore no-explicit-any
+          return (left as any) >= (right as any);
+        case "<=":
+          // deno-lint-ignore no-explicit-any
+          return (left as any) <= (right as any);
+      }
+      return false;
+    }
+    default:
+      return false;
+  }
+}
+
+/**
+ * Boolean reducers.
+ */
+function boolReduce(arr: unknown, mode: "all" | "any"): unknown {
+  if (!Array.isArray(arr)) return null;
+  if (mode === "all") {
+    for (const v of arr) {
+      if (!v) return false;
+    }
+    return true;
+  }
+  for (const v of arr) {
+    if (v) return true;
+  }
+  return false;
+}
+
+/**
+ * Iterate numeric values; invokes fn for each successfully coerced number.
+ */
+function eachNumeric(
+  arr: unknown,
+  fn: (n: number) => void,
+): { any: boolean } | null {
+  if (!Array.isArray(arr)) return null;
+  let any = false;
+  for (const v of arr) {
+    const n = toNumber(v);
+    if (n !== null) {
+      any = true;
+      fn(n);
+    }
+  }
+  return { any };
+}
 
 /**
  * Built-in transformers implementing spec semantics (best effort without
@@ -147,19 +252,7 @@ export function buildDefaultTransformers(): TransformerLibrary {
       return out;
     },
     concat(a: unknown, b: unknown): unknown {
-      // '&' operator semantics: stringify non-strings with JSON (except null)
-      function toStr(x: unknown): string {
-        if (x === null) return "null";
-        if (x === undefined) return "null";
-        if (typeof x === "string") return x;
-        if (typeof x === "number" || typeof x === "boolean") return String(x);
-        try {
-          return JSON.stringify(x);
-        } catch {
-          return "null";
-        }
-      }
-      return toStr(a) + toStr(b);
+      return coerceForConcat(a) + coerceForConcat(b);
     },
 
     // --- String functions ---
@@ -199,59 +292,41 @@ export function buildDefaultTransformers(): TransformerLibrary {
         typeof sep === "string" ? sep : ", ",
       );
     },
-    concatstr(...parts: unknown[]): unknown {
-      // Non-spec convenience (not used by code generator)
-      return parts.map((p) => (p == null ? "" : String(p))).join("");
-    },
 
     // --- Aggregates / numeric ---
     sum(arr: unknown): unknown {
-      if (!Array.isArray(arr)) return null;
       let total = 0;
-      let any = false;
-      for (const v of arr) {
-        const num = toNumber(v);
-        if (num !== null) {
-          total += num;
-          any = true;
-        }
-      }
-      return any ? total : 0;
+      const iter = eachNumeric(arr, (n) => {
+        total += n;
+      });
+      if (iter === null) return null;
+      return iter.any ? total : 0;
     },
     avg(arr: unknown): unknown {
-      if (!Array.isArray(arr)) return null;
       let total = 0;
       let count = 0;
-      for (const v of arr) {
-        const num = toNumber(v);
-        if (num !== null) {
-          total += num;
-          count++;
-        }
-      }
+      const iter = eachNumeric(arr, (n) => {
+        total += n;
+        count++;
+      });
+      if (iter === null) return null;
       return count > 0 ? total / count : null;
     },
     min(arr: unknown): unknown {
-      if (!Array.isArray(arr)) return null;
-      let result: number | null = null;
-      for (const v of arr) {
-        const num = toNumber(v);
-        if (num !== null) {
-          result = result === null ? num : Math.min(result, num);
-        }
-      }
-      return result;
+      let m: number | null = null;
+      const iter = eachNumeric(arr, (n) => {
+        m = m === null ? n : Math.min(m, n);
+      });
+      if (iter === null) return null;
+      return m;
     },
     max(arr: unknown): unknown {
-      if (!Array.isArray(arr)) return null;
-      let result: number | null = null;
-      for (const v of arr) {
-        const num = toNumber(v);
-        if (num !== null) {
-          result = result === null ? num : Math.max(result, num);
-        }
-      }
-      return result;
+      let m: number | null = null;
+      const iter = eachNumeric(arr, (n) => {
+        m = m === null ? n : Math.max(m, n);
+      });
+      if (iter === null) return null;
+      return m;
     },
     len(v: unknown): unknown {
       if (Array.isArray(v) || typeof v === "string") return v.length;
@@ -318,18 +393,10 @@ export function buildDefaultTransformers(): TransformerLibrary {
 
     // --- Logical / array reducers ---
     all(arr: unknown): unknown {
-      if (!Array.isArray(arr)) return null;
-      for (const v of arr) {
-        if (!v) return false;
-      }
-      return true;
+      return boolReduce(arr, "all");
     },
     any(arr: unknown): unknown {
-      if (!Array.isArray(arr)) return null;
-      for (const v of arr) {
-        if (v) return true;
-      }
-      return false;
+      return boolReduce(arr, "any");
     },
     equal(a: unknown, b: unknown): unknown {
       return deepEqual(a, b);
@@ -342,7 +409,7 @@ export function buildDefaultTransformers(): TransformerLibrary {
 
     // --- Type / existence checks ---
     is_null(v: unknown): unknown {
-      return v === null || v === undefined;
+      return v == null;
     },
     is_number(v: unknown): unknown {
       return typeof v === "number" && Number.isFinite(v);
@@ -357,7 +424,7 @@ export function buildDefaultTransformers(): TransformerLibrary {
       return !!v && typeof v === "object" && !Array.isArray(v);
     },
     exists(v: unknown): unknown {
-      return v !== null && v !== undefined;
+      return v != null;
     },
 
     // --- Date / time (minimal) ---
@@ -386,7 +453,6 @@ export function buildDefaultTransformers(): TransformerLibrary {
     format(d: unknown, pattern: unknown): unknown {
       if (!(d instanceof Date)) return null;
       if (typeof pattern !== "string") return null;
-      // Very small pattern support
       const yyyy = d.getUTCFullYear().toString().padStart(4, "0");
       const mm = (d.getUTCMonth() + 1).toString().padStart(2, "0");
       const dd = d.getUTCDate().toString().padStart(2, "0");
@@ -407,14 +473,9 @@ export function buildDefaultTransformers(): TransformerLibrary {
   if (!f._arith) {
     f._arith = (...args: unknown[]): unknown => {
       const [op, a, b] = args as [string, unknown, unknown];
-      const toNum = (v: unknown): number | null => {
-        if (typeof v === "number" && Number.isFinite(v)) return v;
-        if (typeof v === "boolean") return v ? 1 : 0;
-        return null;
-      };
       const scalar = (x: unknown, y: unknown): unknown => {
-        const nx = toNum(x);
-        const ny = toNum(y);
+        const nx = toNumber(x);
+        const ny = toNumber(y);
         if (nx === null || ny === null) return null;
         switch (op) {
           case "+":
@@ -431,73 +492,24 @@ export function buildDefaultTransformers(): TransformerLibrary {
             return null;
         }
       };
-      if (Array.isArray(a) && Array.isArray(b)) {
-        if (a.length !== b.length) return null;
-        return a.map((v, i) => scalar(v, (b as unknown[])[i]));
-      }
-      if (Array.isArray(a) && !Array.isArray(b)) {
-        return a.map((v) => scalar(v, b));
-      }
-      if (!Array.isArray(a) && Array.isArray(b)) {
-        return (b as unknown[]).map((v) => scalar(a, v));
-      }
-      return scalar(a, b);
+      return broadcastBinary(a, b, scalar, null);
     };
   }
   if (!f._comp) {
     f._comp = (...args: unknown[]): unknown => {
       const [op, a, b] = args as [string, unknown, unknown];
-      const cmp = (x: unknown, y: unknown): boolean => {
-        switch (op) {
-          case "==":
-            return JSON.stringify(x) === JSON.stringify(y);
-          case "!=":
-            return JSON.stringify(x) !== JSON.stringify(y);
-          case ">":
-            return (x as any) > (y as any);
-            // deno-lint-ignore no-explicit-any
-          case "<":
-            return (x as any) < (y as any);
-            // deno-lint-ignore no-explicit-any
-          case ">=":
-            return (x as any) >= (y as any);
-            // deno-lint-ignore no-explicit-any
-          case "<=":
-            return (x as any) <= (y as any);
-          default:
-            return false;
-        }
-      };
-      if (Array.isArray(a) && Array.isArray(b)) {
-        if (a.length !== b.length) return false;
-        return a.map((v, i) => cmp(v, (b as unknown[])[i]));
-      }
-      if (Array.isArray(a) && !Array.isArray(b)) {
-        return a.map((v) => cmp(v, b));
-      }
-      if (!Array.isArray(a) && Array.isArray(b)) {
-        return (b as unknown[]).map((v) => cmp(a, v));
-      }
-      return cmp(a, b);
+      const scalar = (x: unknown, y: unknown): boolean =>
+        compareValues(op, x, y);
+      return broadcastBinary(a, b, scalar, false);
     };
   }
   if (!f._logic) {
     f._logic = (...args: unknown[]): unknown => {
       const [rawOp, a, b] = args as ["and" | "or", unknown, unknown];
       const op = rawOp === "and" ? "and" : "or";
-      const logic = (x: unknown, y: unknown): boolean =>
+      const scalar = (x: unknown, y: unknown): boolean =>
         op === "and" ? !!x && !!y : !!x || !!y;
-      if (Array.isArray(a) && Array.isArray(b)) {
-        if (a.length !== b.length) return false;
-        return a.map((v, i) => logic(v, (b as unknown[])[i]));
-      }
-      if (Array.isArray(a) && !Array.isArray(b)) {
-        return a.map((v) => logic(v, b));
-      }
-      if (!Array.isArray(a) && Array.isArray(b)) {
-        return (b as unknown[]).map((v) => logic(a, v));
-      }
-      return logic(a, b);
+      return broadcastBinary(a, b, scalar, false);
     };
   }
   if (!f._not) {
@@ -525,9 +537,7 @@ function attachFunctionMetadata<T extends Function>(
     ast: { value: meta.ast, enumerable: false },
     source: { value: meta.source, enumerable: false },
     toString: {
-      value: function () {
-        return meta.code;
-      },
+      value: () => meta.code,
       enumerable: false,
     },
   });
@@ -542,7 +552,6 @@ function buildQueryExecutor(
   lib: TransformerLibrary,
 ): (i: unknown) => unknown {
   // Wrap in try/catch to yield null on runtime errors.
-  // eslint-disable-next-line no-new-func
   const fn = new Function(
     "f",
     `return function(i){
@@ -568,22 +577,11 @@ function buildMessageExecutor(
     p.isExpr ? `__parts.push(__coerce(${p.code}));` : `__parts.push(${p.code});`
   ).join("\n");
 
-  const full = `
-    return function(i){
-      const __parts = [];
-      try {
-        ${concatCode}
-        return __parts.join("");
-      } catch(_e) {
-        return "";
-      }
-    };
-  `;
-  // eslint-disable-next-line no-new-func
-  const fn = new Function("f", "__coerce", full)(lib, _coerceMessageValue) as (
+  const full = "return function(i){const __parts = [];try{" + concatCode +
+    ';return __parts.join("");}catch(_e){return "";}};';
+  return new Function("f", "__coerce", full)(lib, _coerceMessageValue) as (
     i: unknown,
   ) => string;
-  return fn;
 }
 
 /**
