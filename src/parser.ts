@@ -23,103 +23,27 @@ import {
   getComposedTokens,
   nanolex,
 } from "nanolex";
-
-/* ============================================================
- * AST Types
- * ============================================================
- */
-
-export type NumberLiteral = { type: "NumberLiteral"; value: number };
-export type StringLiteral = { type: "StringLiteral"; value: string };
-export type BooleanLiteral = { type: "BooleanLiteral"; value: boolean };
-export type NullLiteral = { type: "NullLiteral" };
-
-export type RangeLiteral = {
-  type: "RangeLiteral";
-  start: Expression;
-  end: Expression;
-};
-
-export type ArrayLiteral = {
-  type: "ArrayLiteral";
-  elements: (Expression | RangeLiteral)[];
-};
-
-export type ObjectProperty = { key: string; value: Expression };
-export type ObjectLiteral = {
-  type: "ObjectLiteral";
-  properties: ObjectProperty[];
-};
-
-export type PathSegment =
-  | { kind: "prop"; name: string }
-  | { kind: "index"; index: number }
-  | { kind: "dynamic"; expr: Expression };
-
-export type PathExpression = {
-  type: "Path";
-  relative: number; // 0 for global; N = depth of '..'
-  segments: PathSegment[];
-};
-
-export type FunctionCall = {
-  type: "FunctionCall";
-  name: string;
-  args: Expression[];
-};
-
-export type UnaryExpression = {
-  type: "UnaryExpression";
-  operator: "not";
-  argument: Expression;
-};
-
-export type BinaryExpression = {
-  type: "BinaryExpression";
-  operator: string;
-  left: Expression;
-  right: Expression;
-};
-
-export type PipeStage = {
-  type: "PipeCall";
-  name: string;
-  args: Expression[];
-};
-
-export type PipelineExpression = {
-  type: "Pipeline";
-  input: Expression;
-  stages: PipeStage[];
-};
-
-export type Expression =
-  | NumberLiteral
-  | StringLiteral
-  | BooleanLiteral
-  | NullLiteral
-  | ArrayLiteral
-  | ObjectLiteral
-  | RangeLiteral // Only appears nested inside arrays, not top-level parse result
-  | PathExpression
-  | FunctionCall
-  | UnaryExpression
-  | BinaryExpression
-  | PipelineExpression;
-
-export type TemplateTextPart = { kind: "text"; value: string };
-export type TemplateEmbedPart = { kind: "embed"; expr: Expression };
-
-export type MessageTemplate = {
-  type: "MessageTemplate";
-  parts: (TemplateTextPart | TemplateEmbedPart)[];
-};
-
-/* ============================================================
- * Tokens
- * ============================================================
- * Order matters (longest / keywords first).
- */
+import type {
+  ArrayLiteral,
+  BinaryExpression,
+  BooleanLiteral,
+  Expression,
+  FunctionCall,
+  MessageTemplate,
+  NullLiteral,
+  NumberLiteral,
+  ObjectLiteral,
+  ObjectProperty,
+  PathExpression,
+  PathSegment,
+  PipelineExpression,
+  PipeStage,
+  RangeLiteral,
+  StringLiteral,
+  TemplateEmbedPart,
+  TemplateTextPart,
+  UnaryExpression,
+} from "./ast-types.ts";
 
 const Whitespace = createToken(/[ \t\r\n]+/, "Whitespace");
 
@@ -212,10 +136,6 @@ const tokens = getComposedTokens([
   Identifier,
 ]);
 
-/* ============================================================
- * Patterns (forward declarations)
- * ============================================================
- */
 const EXPR = createPattern("EXPR");
 const OR = createPattern("OR");
 const AND = createPattern("AND");
@@ -241,11 +161,6 @@ const LITERAL = createPattern("LITERAL");
 const ARG_LIST = createPattern("ARG_LIST");
 const PIPE_TAIL = createPattern("PIPE_TAIL");
 const PIPE_FUNC = createPattern("PIPE_FUNC");
-
-/* ============================================================
- * Parser Construction
- * ============================================================
- */
 
 function buildParser(input: string) {
   const {
@@ -684,11 +599,6 @@ function buildParser(input: string) {
 
   return { parseExpression };
 }
-
-/* ============================================================
- * Public API
- * ============================================================
- */
 
 /**
  * Parse a pure EQL query expression.

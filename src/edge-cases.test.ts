@@ -1,9 +1,13 @@
 import { describe, it } from "jsr:@std/testing/bdd";
 import { expect } from "jsr:@std/expect";
 
-import { compileMessage, compileQuery } from "./compile.ts";
 import { parseQuery } from "./parser.ts";
 import { generateQueryCode } from "./codegen.ts";
+import { Eql } from "./compile.ts";
+
+const eql = new Eql();
+const compileQuery = (q: string) => eql.compileQuery(q);
+const compileMessage = (m: string) => eql.compileMessage(m);
 
 /**
  * Edge case & robustness tests.

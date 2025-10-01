@@ -42,10 +42,6 @@ export interface CompiledMessage {
   toString(): string;
 }
 
-/* ============================================================
- * Built-in Runtime Helpers
- * ============================================================ */
-
 /**
  * Safe numeric conversion.
  */
@@ -521,10 +517,6 @@ export function buildDefaultTransformers(): TransformerLibrary {
   return f;
 }
 
-/* ============================================================
- * Compilation Helpers
- * ============================================================ */
-
 /**
  * Attach a custom toString implementation to the compiled function.
  */
@@ -607,32 +599,6 @@ function buildMessageExecutor(
   return fn;
 }
 
-/* ============================================================
- * Public Compile Functions
- * ============================================================ */
-
-/**
- * Compile a query (expression mode) into an executable function.
- *
- * @param source EQL query source.
- * @param transformers (optional) additional / overriding transformers.
- * @returns compiled function(input)
- */
-/* Removed initial compileQuery (basic semantics) in favor of extended operator version defined later */
-
-/**
- * Compile a message template into an executable function returning a string.
- *
- * @param source Template source.
- * @param transformers Optional additional/overriding transformers.
- * @returns compiled message function(input) => string
- */
-/* Removed initial compileMessage (basic semantics) in favor of extended operator version defined later */
-
-/* ============================================================
- * Eql Class (Instance API)
- * ============================================================ */
-
 /**
  * Eql class provides a reusable instance with a shared transformer
  * library (built-ins + user supplied overrides).
@@ -650,146 +616,32 @@ export class Eql {
     );
   }
 
-  // (methods added via prototype patch & interface merge below)
-
   /**
-   * Static convenience compile (query).
+   * Instance compileQuery using this instance's transformers.
    */
-  static compileQuery(
-    source: string,
-    transformers?: TransformerLibrary,
-  ): CompiledQuery {
-    return compileQuery(source, transformers);
+  compileQuery(source: string): CompiledQuery {
+    const ast = parseQuery(source);
+    const jsExpr = generateQueryCode(ast);
+    const exec = buildQueryExecutor(
+      jsExpr,
+      this._transformers,
+    ) as CompiledQuery;
+    return attachFunctionMetadata(exec, { code: jsExpr, ast, source });
   }
 
   /**
-   * Static convenience compile (message).
+   * Instance compileMessage using this instance's transformers.
    */
-  static compileMessage(
-    source: string,
-    transformers?: TransformerLibrary,
-  ): CompiledMessage {
-    return compileMessage(source, transformers);
+  compileMessage(source: string): CompiledMessage {
+    const tpl = parseMessage(source);
+    const pieces = generateMessageParts(tpl);
+    const exec = buildMessageExecutor(
+      pieces,
+      this._transformers,
+    ) as CompiledMessage;
+    const synthetic = pieces.map((p) => p.isExpr ? `(${p.code})` : p.code).join(
+      " + ",
+    );
+    return attachFunctionMetadata(exec, { code: synthetic, ast: tpl, source });
   }
 }
-
-/* ============================================================
- * Example (commented)
- * ============================================================
- *
- * const eql = new Eql({
- *   transformers: {
- *     sum(array) { ...override... },
- *   },
- * });
- *
- * const q = eql.compileQuery("users | map(.age) | sum");
- * const result = q({ users: [{age:2},{age:5}] });
- *
- * const msg = eql.compileMessage("Ages: { users | map(.age) | join(\",\") }");
- * console.log(msg({ users:[{age:2},{age:5}] }));
- */
-
-/* ============================================================
- * Enhanced Array / Logical / Comparison Semantics
- * ============================================================
- *
- * We add a custom code generator for compileQuery/compileMessage that emits
- * helper calls (f._arith / f._comp / f._logic / f._not) instead of relying
- * on native JS operators so we can implement:
- *  - Arithmetic: element-wise with scalar broadcast (+ - * / %)
- *    * array op array (same length) => element-wise
- *    * array op scalar OR scalar op array => broadcast scalar
- *    * length mismatch => null
- *  - Comparisons (== != > < >= <=):
- *    * element-wise / broadcast producing boolean arrays
- *    * length mismatch => false
- *  - Logical (and / or):
- *    * element-wise / broadcast boolean logic
- *    * length mismatch => false
- *  - not:
- *    * array => element-wise negation
- *    * scalar => boolean negation
- *
- * Existing string concatenation (&) keeps using f.concat.
- * Other parts (range, filter/map pipelines, dynamic paths) are
- * regenerated here (mirroring parser.ts approach) so new semantics
- * apply uniformly.
- *
- * NOTE:
- *  We redefine compileQuery / compileMessage below; earlier exports remain
- *  but will be shadowed by these updated definitions.
- */
-
-/**
- * Install extended operator helpers onto a transformer library if absent.
- */
-// ensureExtendedOperators removed: operator helpers now always present via buildDefaultTransformers()
-
-// Legacy inline code generation removed (migrated to codegen.ts)
-
-/**
- * Redefined compileQuery with extended operators.
- */
-export function compileQuery(
-  source: string,
-  transformers?: TransformerLibrary,
-): CompiledQuery {
-  const ast = parseQuery(source);
-  const lib = Object.assign(buildDefaultTransformers(), transformers ?? {});
-  const jsExpr = generateQueryCode(ast as any);
-  const exec = buildQueryExecutor(jsExpr, lib) as CompiledQuery;
-  return attachFunctionMetadata(exec, { code: jsExpr, ast, source });
-}
-
-/**
- * Redefined compileMessage so embedded expressions also use extended semantics.
- */
-
-// Declare instance method types (merged declaration) so prototype patch is typed.
-export interface Eql {
-  compileQuery(source: string): CompiledQuery;
-  compileMessage(source: string): CompiledMessage;
-}
-export function compileMessage(
-  source: string,
-  transformers?: TransformerLibrary,
-): CompiledMessage {
-  const tpl = parseMessage(source);
-  const lib = Object.assign(buildDefaultTransformers(), transformers ?? {});
-  const pieces = generateMessageParts(tpl as any);
-  const exec = buildMessageExecutor(pieces, lib) as CompiledMessage;
-  const synthetic = pieces.map((p) => p.isExpr ? `(${p.code})` : p.code).join(
-    " + ",
-  );
-  return attachFunctionMetadata(exec, { code: synthetic, ast: tpl, source });
-}
-
-/**
- * Extend Eql instance methods to use new compile functions.
- */
-Eql.prototype.compileQuery = function (
-  this: Eql,
-  source: string,
-): CompiledQuery {
-  const ast = parseQuery(source);
-  const jsExpr = generateQueryCode(ast as any);
-  const exec = buildQueryExecutor(jsExpr, this._transformers) as CompiledQuery;
-  return attachFunctionMetadata(exec, { code: jsExpr, ast, source });
-};
-
-Eql.prototype.compileMessage = function (
-  this: Eql,
-  source: string,
-): CompiledMessage {
-  const tpl = parseMessage(source);
-  const pieces = generateMessageParts(tpl as any);
-  const exec = buildMessageExecutor(
-    pieces,
-    this._transformers,
-  ) as CompiledMessage;
-  const synthetic = pieces.map((p) => p.isExpr ? `(${p.code})` : p.code).join(
-    " + ",
-  );
-  return attachFunctionMetadata(exec, { code: synthetic, ast: tpl, source });
-};

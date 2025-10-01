@@ -1,9 +1,13 @@
 import { describe, it } from "jsr:@std/testing/bdd";
 import { expect } from "jsr:@std/expect";
 
-import { compileMessage, compileQuery, Eql } from "./compile.ts";
+import { Eql } from "./compile.ts";
 import { parseMessage, parseQuery } from "./parser.ts";
 import { generateQueryCode } from "./codegen.ts";
+
+const eql = new Eql();
+const compileQuery = (q: string) => eql.compileQuery(q);
+const compileMessage = (m: string) => eql.compileMessage(m);
 
 describe("integration: compileQuery basic end-to-end", () => {
   it("sums mapped ages", () => {

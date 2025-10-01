@@ -17,104 +17,18 @@
  * only produces AST and never generates code.
  */
 
-/* ============================================================
- * AST Type Mirrors (align with parser.ts)
- * ============================================================ */
-
-export type NumberLiteral = { type: "NumberLiteral"; value: number };
-export type StringLiteral = { type: "StringLiteral"; value: string };
-export type BooleanLiteral = { type: "BooleanLiteral"; value: boolean };
-export type NullLiteral = { type: "NullLiteral" };
-
-export type RangeLiteral = {
-  type: "RangeLiteral";
-  start: Expression;
-  end: Expression;
-};
-
-export type ArrayLiteral = {
-  type: "ArrayLiteral";
-  elements: (Expression | RangeLiteral)[];
-};
-
-export type ObjectProperty = {
-  key: string;
-  value: Expression;
-};
-
-export type ObjectLiteral = {
-  type: "ObjectLiteral";
-  properties: ObjectProperty[];
-};
-
-export type PathPropSegment = { kind: "prop"; name: string };
-export type PathIndexSegment = { kind: "index"; index: number };
-export type PathDynamicSegment = { kind: "dynamic"; expr: Expression };
-export type PathSegment =
-  | PathPropSegment
-  | PathIndexSegment
-  | PathDynamicSegment;
-
-export type PathExpression = {
-  type: "Path";
-  relative: number; // 0 = root, >0 = relative (., .., etc.)
-  segments: PathSegment[];
-};
-
-export type FunctionCall = {
-  type: "FunctionCall";
-  name: string;
-  args: Expression[];
-};
-
-export type UnaryExpression = {
-  type: "UnaryExpression";
-  operator: string; // 'not'
-  argument: Expression;
-};
-
-export type BinaryExpression = {
-  type: "BinaryExpression";
-  operator: string; // + - * / % & == != > < >= <= and or
-  left: Expression;
-  right: Expression;
-};
-
-export type PipeStage = {
-  name: string;
-  args: Expression[];
-};
-
-export type PipelineExpression = {
-  type: "Pipeline";
-  input: Expression;
-  stages: PipeStage[];
-};
-
-export type Expression =
-  | NumberLiteral
-  | StringLiteral
-  | BooleanLiteral
-  | NullLiteral
-  | RangeLiteral
-  | ArrayLiteral
-  | ObjectLiteral
-  | PathExpression
-  | FunctionCall
-  | UnaryExpression
-  | BinaryExpression
-  | PipelineExpression;
-
-export type TemplateTextPart = { kind: "text"; value: string };
-export type TemplateEmbedPart = { kind: "embed"; expr: Expression };
-export type MessageTemplate = {
-  type: "MessageTemplate";
-  parts: (TemplateTextPart | TemplateEmbedPart)[];
-};
-
-/* ============================================================
- * Internal Codegen Context
- * ============================================================ */
+import type {
+  ArrayLiteral,
+  BinaryExpression,
+  Expression,
+  FunctionCall,
+  MessageTemplate,
+  ObjectLiteral,
+  PathExpression,
+  PipelineExpression,
+  RangeLiteral,
+  UnaryExpression,
+} from "./ast-types.ts";
 
 type CodeGenContext = {
   scopes: string[]; // iter variables stack for nested filter/map
@@ -126,10 +40,6 @@ type CodeGenContext = {
 function nextIterVar(depth: number): string {
   return `v${depth}`;
 }
-
-/* ============================================================
- * Core Generators
- * ============================================================ */
 
 /**
  * Generate code for a full query expression.

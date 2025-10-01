@@ -1,6 +1,10 @@
 import { describe, it } from "jsr:@std/testing/bdd";
 import { expect } from "jsr:@std/expect";
-import { compileMessage, compileQuery } from "./compile.ts";
+import { Eql } from "./compile.ts";
+
+const eql = new Eql();
+const compileQuery = (q: string) => eql.compileQuery(q);
+const compileMessage = (m: string) => eql.compileMessage(m);
 
 describe("compileQuery - array arithmetic & broadcasting", () => {
   it("scalar + scalar", () => {

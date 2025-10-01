@@ -1,4 +1,4 @@
-import { describe, it, test } from "jsr:@std/testing/bdd";
+import { describe, it } from "jsr:@std/testing/bdd";
 import { expect } from "jsr:@std/expect";
 import { parseMessage, parseQuery } from "./parser.ts";
 import { generateQueryCode } from "./codegen.ts";
