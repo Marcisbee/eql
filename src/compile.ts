@@ -567,12 +567,13 @@ function buildMessageExecutor(
   lib: TransformerLibrary,
 ): (i: unknown) => string {
   // Use shared _coerceMessageValue helper (passed into generated function).
-  const concatCode = pieces.map((p) =>
-    p.isExpr ? `__parts.push(__coerce(${p.code}));` : `__parts.push(${p.code});`
-  ).join("\n");
-
-  const full = "return function(i){const __parts = [];try{" + concatCode +
-    ';return __parts.join("");}catch(_e){return "";}};';
+  const parts = pieces.map((p) =>
+    p.isExpr ? `__coerce(${p.code})` : `${p.code}`
+  );
+  // Build a direct concatenation expression (avoid using Array.join).
+  const expr = parts.length === 0 ? '""' : '"" + (' + parts.join(" + ") + ")";
+  const full = "return function(i){try{return " + expr +
+    ';}catch(_e){return "";}};';
   return new Function("f", "__coerce", full)(lib, _coerceMessageValue) as (
     i: unknown,
   ) => string;
