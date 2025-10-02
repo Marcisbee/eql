@@ -10,9 +10,15 @@ const customFormatters = {
 const data = { salutation: "mr", user: "Test" };
 
 // Benchmarks
-Deno.bench("eql", { group: "full" }, () => {
+Deno.bench("eql.message", { group: "full" }, () => {
   new Eql({ transformers: customFormatters as any }).compileMessage(
     "Hello {a} {salutation} {user|upcase}!",
+  )(data);
+});
+
+Deno.bench("eql.query", { group: "full" }, () => {
+  new Eql({ transformers: customFormatters as any }).compileQuery(
+    "user|upcase",
   )(data);
 });
 
@@ -34,18 +40,34 @@ Deno.bench("messageformat@2.3.0", { group: "full" }, () => {
   )(data);
 });
 
-Deno.bench("eql", { group: "boot" }, () => {
+Deno.bench("eql.message", { group: "boot" }, () => {
   new Eql({ transformers: customFormatters as any });
 });
 
-Deno.bench("eql", { group: "compile" }, () => {
+Deno.bench("eql.query", { group: "boot" }, () => {
+  new Eql({ transformers: customFormatters as any });
+});
+
+Deno.bench("eql.message", { group: "compile" }, () => {
   new Eql({ transformers: customFormatters as any }).compileMessage(
     "Hello {a} {salutation} {user|upcase}!",
   );
 });
 
-Deno.bench("eql", { group: "eval" }, () => {
+Deno.bench("eql.query", { group: "compile" }, () => {
+  new Eql({ transformers: customFormatters as any }).compileQuery(
+    "user|upcase",
+  );
+});
+
+Deno.bench("eql.message", { group: "eval" }, () => {
   new Eql({ transformers: customFormatters as any }).compileMessage(
     "Hello {a} {salutation} {user|upcase}!",
+  )(data);
+});
+
+Deno.bench("eql.query", { group: "eval" }, () => {
+  new Eql({ transformers: customFormatters as any }).compileQuery(
+    "user|upcase",
   )(data);
 });

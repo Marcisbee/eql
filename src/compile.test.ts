@@ -6,29 +6,66 @@ const eql = new Eql();
 const compileQuery = (q: string) => eql.compileQuery(q);
 const compileMessage = (m: string) => eql.compileMessage(m);
 
+const data = {
+  foo: "FOO",
+};
+
+describe("compileMessage", () => {
+  describe("compiles", () => {
+    for (
+      const [input, compiled] of [
+        ["foo", '"foo"'],
+        ["{foo}", "__coerce(i.foo)"],
+        ["Hello {foo}!", '"Hello" + " " + __coerce(i.foo) + "!"'],
+      ] satisfies [string, string][]
+    ) {
+      it(JSON.stringify(input), () => {
+        const fn = eql.compileMessage(input);
+
+        expect(fn.toString()).toEqual(
+          `function(i){try{return "" + (${compiled});}catch(_e){return "";}}`,
+        );
+      });
+    }
+  });
+
+  describe("evals", () => {
+    for (
+      const [input, result] of [
+        ["foo", "foo"],
+        ["{foo}", "FOO"],
+        ["Hello {foo}!", "Hello FOO!"],
+      ] satisfies [string, unknown][]
+    ) {
+      it(JSON.stringify(input), () => {
+        const fn = eql.compileMessage(input);
+        const generated = fn(data);
+
+        expect(generated).toEqual(result);
+      });
+    }
+  });
+});
+
 describe("compileQuery - array arithmetic & broadcasting", () => {
   it("scalar + scalar", () => {
     const fn = compileQuery("1 + 2");
     expect(fn({})).toBe(3);
-    expect(fn.toString()).toBe('f._arith("+",1,2)');
   });
 
   it("array + scalar broadcast", () => {
     const fn = compileQuery("[1,2,3] + 5");
     expect(fn({})).toEqual([6, 7, 8]);
-    expect(fn.toString()).toBe('f._arith("+",[1,2,3],5)');
   });
 
   it("scalar + array broadcast", () => {
     const fn = compileQuery("10 + [1,2]");
     expect(fn({})).toEqual([11, 12]);
-    expect(fn.toString()).toBe('f._arith("+",10,[1,2])');
   });
 
   it("array + array same length element-wise", () => {
     const fn = compileQuery("[1,2] + [3,4]");
     expect(fn({})).toEqual([4, 6]);
-    expect(fn.toString()).toBe('f._arith("+",[1,2],[3,4])');
   });
 
   it("array + array length mismatch => null", () => {
@@ -51,7 +88,6 @@ describe("compileQuery - comparisons", () => {
   it("array > scalar broadcast", () => {
     const fn = compileQuery("[1,2,3] > 2");
     expect(fn({})).toEqual([false, false, true]);
-    expect(fn.toString()).toBe('f._comp(">",[1,2,3],2)');
   });
 
   it("array > array element-wise", () => {
@@ -89,13 +125,11 @@ describe("compileQuery - logical and not", () => {
   it("not array element-wise", () => {
     const fn = compileQuery("not [true,false]");
     expect(fn({})).toEqual([false, true]);
-    expect(fn.toString()).toBe("f._not([true,false])");
   });
 
   it("not scalar", () => {
     const fn = compileQuery("not true");
     expect(fn({})).toBe(false);
-    expect(fn.toString()).toBe("f._not(true)");
   });
 });
 
@@ -103,7 +137,6 @@ describe("compileQuery - string concatenation unchanged", () => {
   it("concatenates string & array (array JSON stringified)", () => {
     const fn = compileQuery('"x" & [1,2]');
     expect(fn({})).toBe("x[1,2]");
-    expect(fn.toString()).toBe('f.concat("x",[1,2])');
   });
 });
 

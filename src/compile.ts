@@ -462,6 +462,7 @@ const defaultTransformers: TransformerLibrary = {
       .replace(/ss/g, SS);
   },
 
+  // Builtin helpers for codegen (not part of public API)
   _arith(...args: unknown[]): unknown {
     const [op, a, b] = args as [string, unknown, unknown];
     const scalar = (x: unknown, y: unknown): unknown => {
@@ -503,28 +504,6 @@ const defaultTransformers: TransformerLibrary = {
     return !x;
   },
 };
-
-/**
- * Attach a custom toString implementation to the compiled function.
- */
-function attachFunctionMetadata<T extends Function>(
-  fn: T,
-  meta: {
-    code: string;
-    ast: unknown;
-    source: string;
-  },
-): T {
-  Object.defineProperties(fn, {
-    ast: { value: meta.ast, enumerable: false },
-    source: { value: meta.source, enumerable: false },
-    toString: {
-      value: () => meta.code,
-      enumerable: false,
-    },
-  });
-  return fn;
-}
 
 /**
  * Build a safe execution wrapper.
@@ -584,11 +563,10 @@ export class Eql {
   compileQuery(source: string): CompiledQuery {
     const ast = parseQuery(source);
     const jsExpr = generateQueryCode(ast);
-    const exec = buildQueryExecutor(
+    return buildQueryExecutor(
       jsExpr,
       this._transformers,
     ) as CompiledQuery;
-    return attachFunctionMetadata(exec, { code: jsExpr, ast, source });
   }
 
   /**
@@ -597,13 +575,9 @@ export class Eql {
   compileMessage(source: string): CompiledMessage {
     const tpl = parseMessage(source);
     const pieces = generateMessageParts(tpl);
-    const exec = buildMessageExecutor(
+    return buildMessageExecutor(
       pieces,
       this._transformers,
     ) as CompiledMessage;
-    const synthetic = pieces.map((p) => p.isExpr ? `(${p.code})` : p.code).join(
-      " + ",
-    );
-    return attachFunctionMetadata(exec, { code: synthetic, ast: tpl, source });
   }
 }

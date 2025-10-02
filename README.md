@@ -8,8 +8,6 @@ Composable. Broadcast‑aware. Two modes: query + message.
 - Need more than plain `a.b.c` paths, less than “let users run JS”.
 - Deterministic + side‑effect free (except `now()`).
 - Single consistent syntax (no aliases).
-- Returns a clean AST you can analyze before compiling (metadata attached to
-  compiled functions).
 
 ## Quick Glance
 
