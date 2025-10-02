@@ -75,7 +75,7 @@ const StringTok = createToken(
 const Identifier = createToken(/[a-zA-Z_][a-zA-Z0-9_]*/, "Identifier");
 
 /* Identifier (after keywords to avoid conflicts) */
-const Any = createToken(/[^{]*/);
+const Any = createToken(/[^{]+/);
 
 /* Compose tokens list */
 const tokens = getComposedTokens([
