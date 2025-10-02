@@ -1,14 +1,27 @@
 {
   "version": "5",
   "specifiers": {
+    "jsr:@marcisbee/mf@0.5.0": "0.5.0",
+    "jsr:@marcisbee/nanolex@0.7": "0.7.0",
     "jsr:@std/assert@^1.0.13": "1.0.14",
     "jsr:@std/assert@^1.0.14": "1.0.14",
     "jsr:@std/expect@*": "1.0.17",
     "jsr:@std/internal@^1.0.10": "1.0.10",
     "jsr:@std/testing@*": "1.0.15",
+    "npm:messageformat@2.3.0": "2.3.0",
+    "npm:messagepipe@0.2.3": "0.2.3",
     "npm:nanolex@0.7": "0.7.0"
   },
   "jsr": {
+    "@marcisbee/mf@0.5.0": {
+      "integrity": "98a33443e1e6799f163b21a026afb8f7674077387bd1b4995971f890dfed0eca",
+      "dependencies": [
+        "jsr:@marcisbee/nanolex"
+      ]
+    },
+    "@marcisbee/nanolex@0.7.0": {
+      "integrity": "3f456c015f840421f253a87df9a7c53b028335abd21107f7ecc44166c24aa435"
+    },
     "@std/assert@1.0.14": {
       "integrity": "68d0d4a43b365abc927f45a9b85c639ea18a9fab96ad92281e493e4ed84abaa4",
       "dependencies": [
@@ -34,6 +47,34 @@
     }
   },
   "npm": {
+    "make-plural@4.3.0": {
+      "integrity": "sha512-xTYd4JVHpSCW+aqDof6w/MebaMVNTVYBZhbB/vi513xXdiPT92JMVCo0Jq8W2UZnzYRFeVbQiQ+I25l13JuKvA==",
+      "optionalDependencies": [
+        "minimist"
+      ],
+      "bin": true
+    },
+    "messageformat-formatters@2.0.1": {
+      "integrity": "sha512-E/lQRXhtHwGuiQjI7qxkLp8AHbMD5r2217XNe/SREbBlSawe0lOqsFb7rflZJmlQFSULNLIqlcjjsCPlB3m3Mg=="
+    },
+    "messageformat-parser@4.1.3": {
+      "integrity": "sha512-2fU3XDCanRqeOCkn7R5zW5VQHWf+T3hH65SzuqRvjatBK7r4uyFa5mEX+k6F9Bd04LVM5G4/BHBTUJsOdW7uyg=="
+    },
+    "messageformat@2.3.0": {
+      "integrity": "sha512-uTzvsv0lTeQxYI2y1NPa1lItL5VRI8Gb93Y2K2ue5gBPyrbJxfDi/EYWxh2PKv5yO42AJeeqblS9MJSh/IEk4w==",
+      "dependencies": [
+        "make-plural",
+        "messageformat-formatters",
+        "messageformat-parser"
+      ],
+      "deprecated": true
+    },
+    "messagepipe@0.2.3": {
+      "integrity": "sha512-CIqDbnxFnXegSzwvaxXDgAHzKb9cztvFOOd2x85QHYJpnjy53XHwjQ23jU5o2x9iFoNYId5KicgszQfG2zJfIA=="
+    },
+    "minimist@1.2.8": {
+      "integrity": "sha512-2yyAR8qBkN3YuheJanUpWC5U3bb5osDywNB8RzDVlDwDHbocAJveqqj1u8+SVD7jkWT4yvsHCpWqqWqAxb0zCA=="
+    },
     "nanolex@0.7.0": {
       "integrity": "sha512-pQzVorph8XvFBGyLK0/NOrpe8rMndRYmpgs3ZvfqDsG/JyXo3e2MHHA/5+A9YsEv/LDTGkiJCBor02l+X9hGpA=="
     }
