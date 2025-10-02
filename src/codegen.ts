@@ -1,22 +1,3 @@
-/**
- * Unified EQL code generator (extended semantics).
- *
- * Responsibilities:
- *  - Convert parsed AST (from parser.ts) into JavaScript source strings
- *    referencing runtime helpers `f.*`.
- *  - Apply element-wise / broadcast semantics for arithmetic, comparison,
- *    logical, and unary not operations using helper calls:
- *      f._arith(op, a, b)
- *      f._comp(op, a, b)
- *      f._logic(op, a, b)
- *      f._not(x)
- *  - Keep other constructs (paths, literals, arrays, objects, functions,
- *    pipelines, ranges, concat) straightforward.
- *
- * This module is intentionally decoupled from the parser so the parser
- * only produces AST and never generates code.
- */
-
 import type {
   ArrayLiteral,
   BinaryExpression,
