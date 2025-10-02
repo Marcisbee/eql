@@ -33,3 +33,19 @@ Deno.bench("messageformat@2.3.0", { group: "full" }, () => {
     "Hello {a} {salutation} {user,upcase}!",
   )(data);
 });
+
+Deno.bench("eql", { group: "boot" }, () => {
+  new Eql({ transformers: customFormatters as any });
+});
+
+Deno.bench("eql", { group: "compile" }, () => {
+  new Eql({ transformers: customFormatters as any }).compileMessage(
+    "Hello {a} {salutation} {user|upcase}!",
+  );
+});
+
+Deno.bench("eql", { group: "eval" }, () => {
+  new Eql({ transformers: customFormatters as any }).compileMessage(
+    "Hello {a} {salutation} {user|upcase}!",
+  )(data);
+});
