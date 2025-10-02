@@ -1,21 +1,3 @@
-/**
- * EQL AST parser implemented with nanolex.
- *
- * This covers:
- * - All literal types (number, string, boolean, null, arrays, objects, ranges)
- * - Paths (global + relative with dot depth, dynamic [expr] segments)
- * - Function calls
- * - Operators with correct precedence
- * - Pipelines (tight precedence with functions per spec)
- * - Message mode templates ("... { expr } ...")
- *
- * NOTE:
- * - Semantic validation (e.g., relative paths only inside filter/map) is deferred to the evaluator.
- * - Negative indices are expected via bracket notation (e.g. items[-1]) — unary minus
- *   is not part of the spec grammar, so direct "-1" literal is not supported outside
- *   a subtraction expression.
- */
-
 import {
   createPattern,
   createToken,
@@ -72,6 +54,7 @@ const Percent = createToken("%");
 const Amp = createToken("&");
 const Gt = createToken(">");
 const Lt = createToken("<");
+const Escape = createToken("\\");
 
 /* Keywords */
 const And = createToken("and");
@@ -90,6 +73,9 @@ const StringTok = createToken(
 
 /* Identifier (after keywords to avoid conflicts) */
 const Identifier = createToken(/[a-zA-Z_][a-zA-Z0-9_]*/, "Identifier");
+
+/* Identifier (after keywords to avoid conflicts) */
+const Any = createToken(/[^{]*/);
 
 /* Compose tokens list */
 const tokens = getComposedTokens([
@@ -119,6 +105,7 @@ const tokens = getComposedTokens([
   Amp,
   Gt,
   Lt,
+  Escape,
 
   /* Literals */
   NumberTok,
@@ -154,9 +141,14 @@ const ARG_LIST = createPattern("ARG_LIST");
 const PIPE_TAIL = createPattern("PIPE_TAIL");
 const PIPE_FUNC = createPattern("PIPE_FUNC");
 
+/* Message template patterns */
+const SEGMENT = createPattern("SEGMENT");
+const MESSAGE = createPattern("MESSAGE");
+
 function buildParser(input: string) {
   const {
     consume,
+    peek,
     and,
     or,
     not,
@@ -582,14 +574,54 @@ function buildParser(input: string) {
   EXPR.set = OR;
 
   /**
-   * parse() entrypoint
+   * Message template parsing
+   * SEGMENT -> text | embed
    */
+  SEGMENT.set = or([
+    consume(Whitespace, (value) => ({
+      kind: "text",
+      value,
+    } as TemplateTextPart)),
+    and([
+      consume(Escape),
+      or([consume(LBrace), consume(RBrace)]),
+    ], ([, value]) => ({ kind: "text", value } as TemplateTextPart)),
+    and([
+      consume(LBrace),
+      or([
+        EXPR,
+        or(
+          [peek(consume(RBrace))],
+          () => ({ type: "NullLiteral" } as NullLiteral),
+        ),
+      ]),
+      consume(RBrace),
+    ], ([, expr]) => ({ kind: "embed", expr } as TemplateEmbedPart)),
+    consume(Any, (value) => ({
+      kind: "text",
+      value,
+    } as TemplateTextPart)),
+  ]);
+
+  /**
+   * MESSAGE -> SEGMENT*
+   */
+  MESSAGE.set = zeroOrMany(SEGMENT, (parts) => ({
+    type: "MessageTemplate",
+    parts,
+  }));
+
   function parseExpression(): Expression {
     const [expr] = throwIfError(and([EXPR, consume(EOF)]));
     return expr as Expression;
   }
 
-  return { parseExpression };
+  function parseMsg(): MessageTemplate {
+    const [message] = throwIfError(and([MESSAGE, consume(EOF)]));
+    return message as MessageTemplate;
+  }
+
+  return { parseExpression, parseMsg };
 }
 
 /**
@@ -600,87 +632,7 @@ export function parseQuery(input: string): Expression {
   return parseExpression();
 }
 
-/**
- * Parse a message template (message mode).
- *
- * Grammar (simplified):
- *   message := (text | escape | '{' expr '}')*
- * Escapes:
- *   \{  => literal {
- *   \\  => literal \
- * No nested { } — first top-level } closes an expression block.
- */
 export function parseMessage(input: string): MessageTemplate {
-  const parts: (TemplateTextPart | TemplateEmbedPart)[] = [];
-  let i = 0;
-  let buffer = "";
-
-  function flushText() {
-    if (buffer.length > 0) {
-      parts.push({ kind: "text", value: buffer });
-      buffer = "";
-    }
-  }
-
-  while (i < input.length) {
-    const ch = input[i];
-
-    if (ch === "\\") {
-      // Escape sequence
-      const next = input[i + 1];
-      if (next === "{" || next === "\\") {
-        buffer += next;
-        i += 2;
-        continue;
-      }
-      // Unrecognized escape: treat '\' literally
-      buffer += "\\";
-      i++;
-      continue;
-    }
-
-    if (ch === "{") {
-      // Start of expression
-      flushText();
-      i++;
-      const exprStart = i;
-      let found = false;
-      while (i < input.length) {
-        if (input[i] === "}") {
-          found = true;
-          break;
-        }
-        if (input[i] === "{") {
-          // No nesting allowed -> treat as literal '{'
-          // We'll continue; the first } will still terminate expression erroneously.
-          // To be strict, we could fail; spec states "No nesting".
-          // Choose to treat nested { as literal text inside expression (will parse error later if invalid).
-        }
-        i++;
-      }
-      if (!found) {
-        throw new Error("Unterminated expression in message template");
-      }
-      const exprSource = input.slice(exprStart, i).trim();
-      i++; // consume '}'
-      if (exprSource.length === 0) {
-        // Empty embed => treat as empty string
-        parts.push({ kind: "embed", expr: { type: "NullLiteral" } });
-      } else {
-        const expr = parseQuery(exprSource);
-        parts.push({ kind: "embed", expr });
-      }
-      continue;
-    }
-
-    buffer += ch;
-    i++;
-  }
-
-  flushText();
-
-  return {
-    type: "MessageTemplate",
-    parts,
-  };
+  const { parseMsg } = buildParser(input);
+  return parseMsg();
 }

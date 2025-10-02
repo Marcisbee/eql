@@ -293,13 +293,28 @@ describe("dynamic & relative paths", () => {
 
     it("allows escaped braces alongside real embed", () => {
       const tpl = parseMessage("\\{ not expr } and real { a }");
-      const textPart = tpl.parts[0];
-      expect(textPart).toEqual({
-        kind: "text",
-        value: "{ not expr } and real ",
-      });
-      const embed = tpl.parts[1] as any;
-      expect(embed.expr.type).toBe("Path");
+      expect(tpl.parts).toEqual([
+        { kind: "text", value: "{" },
+        { kind: "text", value: " " },
+        { kind: "text", value: "not" },
+        { kind: "text", value: " " },
+        { kind: "text", value: "expr" },
+        { kind: "text", value: " " },
+        { kind: "text", value: "}" },
+        { kind: "text", value: " " },
+        { kind: "text", value: "and" },
+        { kind: "text", value: " " },
+        { kind: "text", value: "real" },
+        { kind: "text", value: " " },
+        {
+          kind: "embed",
+          expr: {
+            type: "Path",
+            relative: 0,
+            segments: [{ kind: "prop", name: "a" }],
+          },
+        },
+      ]);
     });
   });
 
@@ -325,7 +340,8 @@ describe("message mode", () => {
     expect(tpl).toEqual({
       type: "MessageTemplate",
       parts: [
-        { kind: "text", value: "Hello " },
+        { kind: "text", value: "Hello" },
+        { kind: "text", value: " " },
         {
           kind: "embed",
           expr: {
@@ -337,7 +353,12 @@ describe("message mode", () => {
             ],
           },
         },
-        { kind: "text", value: "! You have " },
+        { kind: "text", value: "!" },
+        { kind: "text", value: " " },
+        { kind: "text", value: "You" },
+        { kind: "text", value: " " },
+        { kind: "text", value: "have" },
+        { kind: "text", value: " " },
         {
           kind: "embed",
           expr: {
@@ -352,7 +373,11 @@ describe("message mode", () => {
             ],
           },
         },
-        { kind: "text", value: " new messages." },
+        { kind: "text", value: " " },
+        { kind: "text", value: "new" },
+        { kind: "text", value: " " },
+        { kind: "text", value: "messages" },
+        { kind: "text", value: "." },
       ],
     });
   });
@@ -361,13 +386,29 @@ describe("message mode", () => {
     const tpl = parseMessage(
       'Literal \\{ brace and backslash \\\\ plus { "ok" }',
     );
-    expect(tpl.parts[0]).toEqual({
-      kind: "text",
-      value: "Literal { brace and backslash \\ plus ",
-    });
-    expect((tpl.parts[1] as any).expr).toEqual({
-      type: "StringLiteral",
-      value: "ok",
-    });
+    expect(tpl.parts).toEqual([
+      {
+        kind: "text",
+        value: "Literal",
+      },
+      { kind: "text", value: " " },
+      { kind: "text", value: "{" },
+      { kind: "text", value: " " },
+      { kind: "text", value: "brace" },
+      { kind: "text", value: " " },
+      { kind: "text", value: "and" },
+      { kind: "text", value: " " },
+      { kind: "text", value: "backslash" },
+      { kind: "text", value: " " },
+      { kind: "text", value: "\\" },
+      { kind: "text", value: "\\" },
+      { kind: "text", value: " " },
+      { kind: "text", value: "plus" },
+      { kind: "text", value: " " },
+      {
+        kind: "embed",
+        expr: { type: "StringLiteral", value: "ok" },
+      },
+    ]);
   });
 });
