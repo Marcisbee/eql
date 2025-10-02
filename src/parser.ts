@@ -582,25 +582,28 @@ function buildParser(input: string) {
       kind: "text",
       value,
     } as TemplateTextPart)),
-    and([
-      consume(Escape),
-      or([consume(LBrace), consume(RBrace)]),
-    ], ([, value]) => ({ kind: "text", value } as TemplateTextPart)),
-    and([
-      consume(LBrace),
-      or([
-        EXPR,
-        or(
-          [peek(consume(RBrace))],
-          () => ({ type: "NullLiteral" } as NullLiteral),
-        ),
-      ]),
-      consume(RBrace),
-    ], ([, expr]) => ({ kind: "embed", expr } as TemplateEmbedPart)),
+    // Handle escaped left-brace: '\{' -> text '{'
+    and(
+      [consume(Escape), consume(LBrace)],
+      ([, value]) => ({ kind: "text", value } as TemplateTextPart),
+    ),
+    // Fallback: consume anything else
     consume(Any, (value) => ({
       kind: "text",
       value,
     } as TemplateTextPart)),
+    // Embeds: '{' EXPR? '}'
+    and(
+      [
+        consume(LBrace),
+        or([
+          EXPR,
+          peek(consume(RBrace, () => ({ type: "NullLiteral" } as NullLiteral))),
+        ]),
+        consume(RBrace),
+      ],
+      ([, expr]) => ({ kind: "embed", expr } as TemplateEmbedPart),
+    ),
   ]);
 
   /**
