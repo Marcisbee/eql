@@ -3,7 +3,7 @@
 - use PascalCase for class names and React components
 - use UPPER_SNAKE_CASE for constants
 - use 2 spaces for indentation
-- use single quotes for strings
+- use double quotes for strings
 - use semicolons at the end of statements
 - use trailing commas in multi-line objects and arrays
 - use template literals for string interpolation
