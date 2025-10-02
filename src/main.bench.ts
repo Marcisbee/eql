@@ -48,26 +48,30 @@ Deno.bench("eql.query", { group: "boot" }, () => {
   new Eql({ transformers: customFormatters as any });
 });
 
+const eqlInstance1 = new Eql({ transformers: customFormatters as any });
 Deno.bench("eql.message", { group: "compile" }, () => {
-  new Eql({ transformers: customFormatters as any }).compileMessage(
+  eqlInstance1.compileMessage(
     "Hello {a} {salutation} {user|upcase}!",
   );
 });
 
 Deno.bench("eql.query", { group: "compile" }, () => {
-  new Eql({ transformers: customFormatters as any }).compileQuery(
+  eqlInstance1.compileQuery(
     "user|upcase",
   );
 });
 
+const eqlInstance2 = new Eql({ transformers: customFormatters as any });
+const fn1 = eqlInstance2.compileMessage(
+  "Hello {a} {salutation} {user|upcase}!",
+);
 Deno.bench("eql.message", { group: "eval" }, () => {
-  new Eql({ transformers: customFormatters as any }).compileMessage(
-    "Hello {a} {salutation} {user|upcase}!",
-  )(data);
+  fn1(data);
 });
 
+const fn2 = eqlInstance2.compileMessage(
+  "user|upcase",
+);
 Deno.bench("eql.query", { group: "eval" }, () => {
-  new Eql({ transformers: customFormatters as any }).compileQuery(
-    "user|upcase",
-  )(data);
+  fn2(data);
 });
