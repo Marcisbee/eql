@@ -116,7 +116,6 @@ const tokens = getComposedTokens([
 ]);
 
 const EXPR = createPattern("EXPR");
-const OR = createPattern("OR");
 const AND = createPattern("AND");
 const COMPARISON = createPattern("COMPARISON");
 const ADDITIVE = createPattern("ADDITIVE");
@@ -551,7 +550,7 @@ function buildParser(input: string) {
   /**
    * OR: AND ('or' AND)*
    */
-  OR.set = and(
+  EXPR.set = and(
     [AND, zeroOrMany(and([consume(Or), AND], ([, e]) => e))],
     ([first, rest]) => {
       let acc = first as Expression;
@@ -566,11 +565,6 @@ function buildParser(input: string) {
       return acc;
     },
   );
-
-  /**
-   * EXPR root -> OR
-   */
-  EXPR.set = OR;
 
   /**
    * Message template parsing
