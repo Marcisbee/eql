@@ -165,7 +165,6 @@ function buildParser(input: string) {
   /**
    * Utility builders
    */
-  const toNumber = (raw: string) => Number(raw);
   const unquote = (raw: string) =>
     raw
       .slice(1, -1)
@@ -282,26 +281,26 @@ function buildParser(input: string) {
     and(
       [consume(Minus), consume(NumberTok)],
       ([, n]) =>
-        ({ type: "NumberLiteral", value: -toNumber(n) }) as NumberLiteral,
+        ({ type: "NumberLiteral", value: -Number(n) }) as NumberLiteral,
     ),
     // Positive number literal
-    and(
-      [consume(NumberTok)],
-      ([n]) => ({ type: "NumberLiteral", value: toNumber(n) }) as NumberLiteral,
+    consume(
+      NumberTok,
+      (n) => ({ type: "NumberLiteral", value: Number(n) }) as NumberLiteral,
     ),
-    and(
-      [consume(StringTok)],
-      ([s]) => ({ type: "StringLiteral", value: unquote(s) }) as StringLiteral,
+    consume(
+      StringTok,
+      (s) => ({ type: "StringLiteral", value: unquote(s) }) as StringLiteral,
     ),
-    and(
-      [consume(True)],
+    consume(
+      True,
       () => ({ type: "BooleanLiteral", value: true }) as BooleanLiteral,
     ),
-    and(
-      [consume(False)],
+    consume(
+      False,
       () => ({ type: "BooleanLiteral", value: false }) as BooleanLiteral,
     ),
-    and([consume(NullTok)], () => ({ type: "NullLiteral" }) as NullLiteral),
+    consume(NullTok, () => ({ type: "NullLiteral" }) as NullLiteral),
     ARRAY_LITERAL,
     OBJECT_LITERAL,
   ]);
