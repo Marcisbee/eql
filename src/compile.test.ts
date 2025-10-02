@@ -10,25 +10,25 @@ describe("compileQuery - array arithmetic & broadcasting", () => {
   it("scalar + scalar", () => {
     const fn = compileQuery("1 + 2");
     expect(fn({})).toBe(3);
-    expect(fn.toString()).toBe('f._arith("+", 1, 2)');
+    expect(fn.toString()).toBe('f._arith("+",1,2)');
   });
 
   it("array + scalar broadcast", () => {
     const fn = compileQuery("[1,2,3] + 5");
     expect(fn({})).toEqual([6, 7, 8]);
-    expect(fn.toString()).toBe('f._arith("+", [1, 2, 3], 5)');
+    expect(fn.toString()).toBe('f._arith("+",[1,2,3],5)');
   });
 
   it("scalar + array broadcast", () => {
     const fn = compileQuery("10 + [1,2]");
     expect(fn({})).toEqual([11, 12]);
-    expect(fn.toString()).toBe('f._arith("+", 10, [1, 2])');
+    expect(fn.toString()).toBe('f._arith("+",10,[1,2])');
   });
 
   it("array + array same length element-wise", () => {
     const fn = compileQuery("[1,2] + [3,4]");
     expect(fn({})).toEqual([4, 6]);
-    expect(fn.toString()).toBe('f._arith("+", [1, 2], [3, 4])');
+    expect(fn.toString()).toBe('f._arith("+",[1,2],[3,4])');
   });
 
   it("array + array length mismatch => null", () => {
@@ -51,7 +51,7 @@ describe("compileQuery - comparisons", () => {
   it("array > scalar broadcast", () => {
     const fn = compileQuery("[1,2,3] > 2");
     expect(fn({})).toEqual([false, false, true]);
-    expect(fn.toString()).toBe('f._comp(">", [1, 2, 3], 2)');
+    expect(fn.toString()).toBe('f._comp(">",[1,2,3],2)');
   });
 
   it("array > array element-wise", () => {
@@ -89,7 +89,7 @@ describe("compileQuery - logical and not", () => {
   it("not array element-wise", () => {
     const fn = compileQuery("not [true,false]");
     expect(fn({})).toEqual([false, true]);
-    expect(fn.toString()).toBe("f._not([true, false])");
+    expect(fn.toString()).toBe("f._not([true,false])");
   });
 
   it("not scalar", () => {
@@ -103,7 +103,7 @@ describe("compileQuery - string concatenation unchanged", () => {
   it("concatenates string & array (array JSON stringified)", () => {
     const fn = compileQuery('"x" & [1,2]');
     expect(fn({})).toBe("x[1,2]");
-    expect(fn.toString()).toBe('f.concat("x", [1, 2])');
+    expect(fn.toString()).toBe('f.concat("x",[1,2])');
   });
 });
 

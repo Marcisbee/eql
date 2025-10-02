@@ -92,7 +92,7 @@ function genExpr(node: Expression, ctx: CodeGenContext): string {
     case "Pipeline":
       return genPipeline(node, ctx);
     default:
-      return "/* unknown-node */";
+      return "/*unknown-node*/";
   }
 }
 
@@ -106,16 +106,15 @@ function genPath(path: PathExpression, ctx: CodeGenContext): string {
   return path.segments.reduce((acc, seg) => {
     if (seg.kind === "prop") return `${acc}.${seg.name}`;
     if (seg.kind === "index") return `${acc}[${seg.index}]`;
-    // dynamic
     return `${acc}[${genExpr(seg.expr, ctx)}]`;
   }, base);
 }
 
 /**
- * Range literal -> f.range(start, end)
+ * Range literal -> f.range(start,end)
  */
 function genRange(r: RangeLiteral, ctx: CodeGenContext): string {
-  return `f.range(${genExpr(r.start, ctx)}, ${genExpr(r.end, ctx)})`;
+  return `f.range(${genExpr(r.start, ctx)},${genExpr(r.end, ctx)})`;
 }
 
 /**
@@ -127,7 +126,7 @@ function genArray(arr: ArrayLiteral, ctx: CodeGenContext): string {
       el.type === "RangeLiteral"
         ? genRange(el as RangeLiteral, ctx)
         : genExpr(el as Expression, ctx)
-    ).join(", ")
+    ).join(",")
   }]`;
 }
 
@@ -138,8 +137,7 @@ function genObject(obj: ObjectLiteral, ctx: CodeGenContext): string {
   return `({${
     obj.properties.map((p) =>
       `${JSON.stringify(p.key)}:${genExpr(p.value, ctx)}`
-    )
-      .join(", ")
+    ).join(",")
   }})`;
 }
 
@@ -147,7 +145,7 @@ function genObject(obj: ObjectLiteral, ctx: CodeGenContext): string {
  * Function call generation.
  */
 function genFunctionCall(fn: FunctionCall, ctx: CodeGenContext): string {
-  return `f.${fn.name}(${fn.args.map((a) => genExpr(a, ctx)).join(", ")})`;
+  return `f.${fn.name}(${fn.args.map((a) => genExpr(a, ctx)).join(",")})`;
 }
 
 /**
@@ -157,7 +155,7 @@ function genUnary(un: UnaryExpression, ctx: CodeGenContext): string {
   if (un.operator === "not") {
     return `f._not(${genExpr(un.argument, ctx)})`;
   }
-  return "/* unsupported-unary */";
+  return "/*unsupported-unary*/";
 }
 
 /**
@@ -168,18 +166,18 @@ function genBinary(bin: BinaryExpression, ctx: CodeGenContext): string {
   const left = genExpr(bin.left, ctx);
   const right = genExpr(bin.right, ctx);
   if (op === "&") {
-    return `f.concat(${left}, ${right})`;
+    return `f.concat(${left},${right})`;
   }
   if (["+", "-", "*", "/", "%"].includes(op)) {
-    return `f._arith(${JSON.stringify(op)}, ${left}, ${right})`;
+    return `f._arith(${JSON.stringify(op)},${left},${right})`;
   }
   if (["==", "!=", ">", "<", ">=", "<="].includes(op)) {
-    return `f._comp(${JSON.stringify(op)}, ${left}, ${right})`;
+    return `f._comp(${JSON.stringify(op)},${left},${right})`;
   }
   if (["and", "or"].includes(op)) {
-    return `f._logic(${JSON.stringify(op)}, ${left}, ${right})`;
+    return `f._logic(${JSON.stringify(op)},${left},${right})`;
   }
-  return "/* unknown-binary */";
+  return "/*unknown-binary*/";
 }
 
 /**
@@ -193,19 +191,17 @@ function genPipeline(pipe: PipelineExpression, ctx: CodeGenContext): string {
       const iter = nextIterVar(baseDepth);
       const inner: CodeGenContext = { scopes: [iter, ...ctx.scopes] };
       const body = genExpr(stage.args[0], inner);
-      acc = `f.filter(${acc}, function(${iter}){return ${body}})`;
+      acc = `f.filter(${acc},function(${iter}){return ${body}})`;
       continue;
     }
     if (stage.name === "map" && stage.args.length === 1) {
       const iter = nextIterVar(baseDepth);
       const inner: CodeGenContext = { scopes: [iter, ...ctx.scopes] };
       const body = genExpr(stage.args[0], inner);
-      acc = `f.map(${acc}, function(${iter}){return ${body}})`;
+      acc = `f.map(${acc},function(${iter}){return ${body}})`;
       continue;
     }
-    const callArgs = [acc, ...stage.args.map((a) => genExpr(a, ctx))].join(
-      ", ",
-    );
+    const callArgs = [acc, ...stage.args.map((a) => genExpr(a, ctx))].join(",");
     acc = `f.${stage.name}(${callArgs})`;
   }
   return acc;

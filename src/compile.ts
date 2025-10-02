@@ -554,13 +554,7 @@ function buildQueryExecutor(
   // Wrap in try/catch to yield null on runtime errors.
   const fn = new Function(
     "f",
-    `return function(i){
-      try {
-        return (${jsExpr});
-      } catch(_e) {
-        return null;
-      }
-    };`,
+    `return function(i){try{return(${jsExpr});}catch(_e){return null;}};`,
   )(lib) as (i: unknown) => unknown;
   return fn;
 }

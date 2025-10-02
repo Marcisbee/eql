@@ -74,12 +74,12 @@ const Gt = createToken(">");
 const Lt = createToken("<");
 
 /* Keywords */
-const And = createToken(/\band\b/, "And");
-const Or = createToken(/\bor\b/, "Or");
-const Not = createToken(/\bnot\b/, "Not");
-const True = createToken(/\btrue\b/, "True");
-const False = createToken(/\bfalse\b/, "False");
-const NullTok = createToken(/\bnull\b/, "Null");
+const And = createToken("and");
+const Or = createToken("or");
+const Not = createToken("not");
+const True = createToken("true");
+const False = createToken("false");
+const NullTok = createToken("null");
 
 /* Literals */
 const NumberTok = createToken(/[0-9]+(?:\.[0-9]+)?/, "Number");
@@ -119,14 +119,6 @@ const tokens = getComposedTokens([
   Amp,
   Gt,
   Lt,
-
-  /* Keywords */
-  And,
-  Or,
-  Not,
-  True,
-  False,
-  NullTok,
 
   /* Literals */
   NumberTok,
