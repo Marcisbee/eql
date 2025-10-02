@@ -22,19 +22,19 @@ Deno.bench("eql.query", { group: "full" }, () => {
   )(data);
 });
 
-Deno.bench("messagepipe@0.2.3", { group: "full" }, () => {
+Deno.bench("messagepipe", { group: "full" }, () => {
   MessagePipe(customFormatters).compile(
     "Hello {a} {salutation} {user|upcase}!",
   )(data);
 });
 
-Deno.bench("messageformat-plus@0.4.0", { group: "full" }, () => {
+Deno.bench("mf+", { group: "full" }, () => {
   new MFPlus("en", { customFormatters }).compile(
     "Hello {a} {salutation} {user,upcase}!",
   )(data);
 });
 
-Deno.bench("messageformat@2.3.0", { group: "full" }, () => {
+Deno.bench("mf", { group: "full" }, () => {
   new MF2("en", { customFormatters }).compile(
     "Hello {a} {salutation} {user,upcase}!",
   )(data);
