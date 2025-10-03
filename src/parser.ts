@@ -35,7 +35,7 @@ import type {
   UnaryExpression,
 } from "./ast-types.ts";
 
-/* Tokens */
+/* ---------------------------------- Tokens --------------------------------- */
 const Whitespace = createToken(/[ \t\r\n]+/, "Whitespace");
 
 /* Multi-character operators & sequences */
@@ -45,7 +45,7 @@ const Gte = createToken(">=");
 const Lte = createToken("<=");
 const DoubleDot = createToken("..");
 
-/* Single-char punctuation */
+/* Single-character punctuation / operators */
 const Dot = createToken(".");
 const LParen = createToken("(");
 const RParen = createToken(")");
@@ -81,12 +81,14 @@ const StringTok = createToken(/"(?:\\.|[^"\\])*"/, "String");
 /* Identifier */
 const Identifier = createToken(/[a-zA-Z_][a-zA-Z0-9_]*/, "Identifier");
 
-/* Template text fallback (anything except '{') */
+/* Template fallback text (anything except '{'). We keep '}' allowed per spec. */
 const Any = createToken(/[^{]+/, "Any");
 
-/* Token list (order matters) */
+/**
+ * Token ordering: longest / specific first.
+ * Keywords must precede Identifier to avoid being captured as generic identifiers.
+ */
 const tokens = [
-  // Punctuation / operators (multi-char first)
   Whitespace,
   EqEq,
   NotEq,
@@ -112,13 +114,13 @@ const tokens = [
   Gt,
   Lt,
   Escape,
-  // Literals
   NumberTok,
   StringTok,
 ];
 
+/* ------------------------------ String Handling ----------------------------- */
 /**
- * Utility: unquote and unescape a JSON-like string literal.
+ * Unquote and unescape a JSON-like string literal.
  */
 function unquote(raw: string): string {
   return raw
@@ -149,13 +151,16 @@ function unquote(raw: string): string {
     );
 }
 
+/* --------------------------- Infix / Operator Helpers ----------------------- */
+interface OpRight {
+  op: string;
+  right: Expression;
+}
+
 /**
- * Helper to build left-associative binary expression chains.
+ * Build left-associative chains of binary expressions.
  */
-function chainInfix(
-  first: Expression,
-  rest: { op: string; right: Expression }[],
-): Expression {
+function chainInfix(first: Expression, rest: OpRight[]): Expression {
   return rest.reduce(
     (acc, { op, right }) =>
       ({
@@ -168,145 +173,91 @@ function chainInfix(
   );
 }
 
-/**
- * Build a single parser instance with rules for both expressions and message templates.
- *
- * Design:
- * - No global skip rule: we need to capture whitespace in message templates.
- * - Expression root rule (EXPR) installs local skip (Whitespace) via skipIn.
- */
+/* Reusable operator choice grammars */
+const OrOp = consume(OrTok);
+const AndOp = consume(AndTok);
+const CompareOps = or([
+  consume(EqEq),
+  consume(NotEq),
+  consume(Gte),
+  consume(Lte),
+  consume(Gt),
+  consume(Lt),
+]);
+const AddOps = or([
+  consume(Plus),
+  consume(Minus),
+  consume(Amp), // string concatenation
+]);
+const MulOps = or([
+  consume(Star),
+  consume(Slash),
+  consume(Percent),
+]);
+
+/* Map small tuple -> OpRight */
+const mapOpRight = (values: readonly unknown[]): OpRight => ({
+  op: values[0] as string,
+  right: values[1] as Expression,
+});
+
+/* ------------------------------- Parser Grammar ----------------------------- */
 const parser = createParser(
   tokens,
   {
-    /* ---------- Expression Grammar (with precedence) ---------- */
-
+    /* ----------------------- Expression Grammar Root ----------------------- */
     EXPR() {
-      // Local whitespace skipping for the whole expression tree.
+      // Skip whitespace only inside expression tree.
       return skipIn(consume(Whitespace), rule(this.OR));
     },
 
-    OR(): Grammar<BinaryExpression | Expression> {
+    OR(): Grammar<Expression> {
       return and(
         [
           rule(this.AND),
-          zeroOrMany(and([consume(OrTok), rule(this.AND)], ([, e]) => e)),
+          zeroOrMany(and([OrOp, rule(this.AND)], mapOpRight)),
         ],
-        ([first, rest]) => {
-          let acc = first as Expression;
-          for (const r of rest as Expression[]) {
-            acc = {
-              type: "BinaryExpression",
-              operator: "or",
-              left: acc,
-              right: r,
-            } as BinaryExpression;
-          }
-          return acc;
-        },
+        ([first, rest]) => chainInfix(first as Expression, rest as OpRight[]),
       );
     },
 
-    AND(): Grammar<BinaryExpression | Expression> {
+    AND(): Grammar<Expression> {
       return and(
         [
           rule(this.COMPARISON),
-          zeroOrMany(
-            and([consume(AndTok), rule(this.COMPARISON)], ([, e]) => e),
-          ),
+          zeroOrMany(and([AndOp, rule(this.COMPARISON)], mapOpRight)),
         ],
-        ([first, rest]) => {
-          let acc = first as Expression;
-          for (const r of rest as Expression[]) {
-            acc = {
-              type: "BinaryExpression",
-              operator: "and",
-              left: acc,
-              right: r,
-            } as BinaryExpression;
-          }
-          return acc;
-        },
+        ([first, rest]) => chainInfix(first as Expression, rest as OpRight[]),
       );
     },
 
-    COMPARISON() {
+    COMPARISON(): Grammar<Expression> {
       return and(
         [
           rule(this.ADDITIVE),
-          zeroOrMany(
-            and(
-              [
-                or([
-                  consume(EqEq),
-                  consume(NotEq),
-                  consume(Gte),
-                  consume(Lte),
-                  consume(Gt),
-                  consume(Lt),
-                ]),
-                rule(this.ADDITIVE),
-              ],
-              ([op, right]) => ({ op, right }),
-            ),
-          ),
+          zeroOrMany(and([CompareOps, rule(this.ADDITIVE)], mapOpRight)),
         ],
-        ([first, rest]) =>
-          chainInfix(
-            first as Expression,
-            rest as { op: string; right: Expression }[],
-          ),
+        ([first, rest]) => chainInfix(first as Expression, rest as OpRight[]),
       );
     },
 
-    ADDITIVE() {
+    ADDITIVE(): Grammar<Expression> {
       return and(
         [
           rule(this.MULTIPLICATIVE),
-          zeroOrMany(
-            and(
-              [
-                or([
-                  consume(Plus),
-                  consume(Minus),
-                  consume(Amp),
-                ]),
-                rule(this.MULTIPLICATIVE),
-              ],
-              ([op, right]) => ({ op, right }),
-            ),
-          ),
+          zeroOrMany(and([AddOps, rule(this.MULTIPLICATIVE)], mapOpRight)),
         ],
-        ([first, rest]) =>
-          chainInfix(
-            first as Expression,
-            rest as { op: string; right: Expression }[],
-          ),
+        ([first, rest]) => chainInfix(first as Expression, rest as OpRight[]),
       );
     },
 
-    MULTIPLICATIVE() {
+    MULTIPLICATIVE(): Grammar<Expression> {
       return and(
         [
           rule(this.UNARY),
-          zeroOrMany(
-            and(
-              [
-                or([
-                  consume(Star),
-                  consume(Slash),
-                  consume(Percent),
-                ]),
-                rule(this.UNARY),
-              ],
-              ([op, right]) => ({ op, right }),
-            ),
-          ),
+          zeroOrMany(and([MulOps, rule(this.UNARY)], mapOpRight)),
         ],
-        ([first, rest]) =>
-          chainInfix(
-            first as Expression,
-            rest as { op: string; right: Expression }[],
-          ),
+        ([first, rest]) => chainInfix(first as Expression, rest as OpRight[]),
       );
     },
 
@@ -330,10 +281,7 @@ const parser = createParser(
         [
           rule(this.PRIMARY),
           zeroOrMany(
-            and(
-              [consume(PipeTok), rule(this.PIPE_FUNC)],
-              ([, f]) => f,
-            ),
+            and([consume(PipeTok), rule(this.PIPE_FUNC)], ([, f]) => f),
           ),
         ],
         ([base, stages]) => {
@@ -381,8 +329,7 @@ const parser = createParser(
       return zeroOrManySep(rule(this.EXPR), consume(Comma));
     },
 
-    /* ---------- Path Parsing ---------- */
-
+    /* ------------------------------ Path Parsing --------------------------- */
     PATH(): Grammar<PathExpression> {
       return and(
         [
@@ -443,8 +390,7 @@ const parser = createParser(
       );
     },
 
-    /* ---------- Literals ---------- */
-
+    /* ------------------------------- Literals ------------------------------ */
     LITERAL() {
       return or([
         and(
@@ -545,8 +491,7 @@ const parser = createParser(
       );
     },
 
-    /* ---------- Pipeline Function Stage ---------- */
-
+    /* -------------------------- Pipeline Function Stage ------------------- */
     PIPE_FUNC(): Grammar<PipeStage> {
       return and(
         [
@@ -570,8 +515,7 @@ const parser = createParser(
       );
     },
 
-    /* ---------- Message Template Grammar ---------- */
-
+    /* ------------------------- Message Template Grammar ------------------- */
     SEGMENT() {
       return or([
         // Escaped brace: \{
@@ -617,10 +561,17 @@ const parser = createParser(
   },
 );
 
+/* -------------------------------- Public API -------------------------------- */
+/**
+ * Parse a query (single expression) and return its AST.
+ */
 export function parseQuery(input: string): Expression {
   return parser("EXPR", input) as Expression;
 }
 
+/**
+ * Parse a message template and return its AST.
+ */
 export function parseMessage(input: string): MessageTemplate {
   return parser("MESSAGE", input) as MessageTemplate;
 }
