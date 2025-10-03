@@ -1,9 +1,17 @@
 import {
-  createPattern,
+  and,
+  consume,
+  createParser,
   createToken,
-  EOF,
-  getComposedTokens,
-  nanolex,
+  Grammar,
+  not,
+  or,
+  peek,
+  rule,
+  skipIn,
+  zeroOrMany,
+  zeroOrManySep,
+  zeroOrOne,
 } from "nanolex";
 import type {
   ArrayLiteral,
@@ -27,6 +35,7 @@ import type {
   UnaryExpression,
 } from "./ast-types.ts";
 
+/* Tokens */
 const Whitespace = createToken(/[ \t\r\n]+/, "Whitespace");
 
 /* Multi-character operators & sequences */
@@ -34,7 +43,8 @@ const EqEq = createToken("==");
 const NotEq = createToken("!=");
 const Gte = createToken(">=");
 const Lte = createToken("<=");
-const DoubleDot = createToken(".."); // range or relative path grouping
+const DoubleDot = createToken("..");
+
 /* Single-char punctuation */
 const Dot = createToken(".");
 const LParen = createToken("(");
@@ -45,7 +55,7 @@ const LBrace = createToken("{");
 const RBrace = createToken("}");
 const Comma = createToken(",");
 const Colon = createToken(":");
-const Pipe = createToken("|");
+const PipeTok = createToken("|");
 const Plus = createToken("+");
 const Minus = createToken("-");
 const Star = createToken("*");
@@ -57,31 +67,27 @@ const Lt = createToken("<");
 const Escape = createToken("\\");
 
 /* Keywords */
-const And = createToken("and");
-const Or = createToken("or");
-const Not = createToken("not");
+const AndTok = createToken("and");
+const OrTok = createToken("or");
+const NotTok = createToken("not");
 const True = createToken("true");
 const False = createToken("false");
 const NullTok = createToken("null");
 
 /* Literals */
 const NumberTok = createToken(/[0-9]+(?:\.[0-9]+)?/, "Number");
-const StringTok = createToken(
-  /"(?:\\.|[^"\\])*"/,
-  "String",
-);
+const StringTok = createToken(/"(?:\\.|[^"\\])*"/, "String");
 
-/* Identifier (after keywords to avoid conflicts) */
+/* Identifier */
 const Identifier = createToken(/[a-zA-Z_][a-zA-Z0-9_]*/, "Identifier");
 
-/* Identifier (after keywords to avoid conflicts) */
-const Any = createToken(/[^{]+/);
+/* Template text fallback (anything except '{') */
+const Any = createToken(/[^{]+/, "Any");
 
-/* Compose tokens list */
-const tokens = getComposedTokens([
+/* Token list (order matters) */
+const tokens = [
+  // Punctuation / operators (multi-char first)
   Whitespace,
-
-  /* Operators / punctuation (multi first) */
   EqEq,
   NotEq,
   Gte,
@@ -96,7 +102,7 @@ const tokens = getComposedTokens([
   RBrace,
   Comma,
   Colon,
-  Pipe,
+  PipeTok,
   Plus,
   Minus,
   Star,
@@ -106,529 +112,515 @@ const tokens = getComposedTokens([
   Gt,
   Lt,
   Escape,
-
-  /* Literals */
+  // Literals
   NumberTok,
   StringTok,
+];
 
-  /* Identifier */
-  Identifier,
-]);
-
-const EXPR = createPattern("EXPR");
-const AND = createPattern("AND");
-const COMPARISON = createPattern("COMPARISON");
-const ADDITIVE = createPattern("ADDITIVE");
-const MULTIPLICATIVE = createPattern("MULTIPLICATIVE");
-const UNARY = createPattern("UNARY");
-const PIPELINE = createPattern("PIPELINE");
-const PRIMARY = createPattern("PRIMARY");
-const FUNCTION_CALL = createPattern("FUNCTION_CALL");
-const PATH = createPattern("PATH");
-const PATH_HEAD = createPattern("PATH_HEAD");
-const PATH_TAIL = createPattern("PATH_TAIL");
-const DYNAMIC_SEG = createPattern("DYNAMIC_SEG");
-const ARRAY_LITERAL = createPattern("ARRAY_LITERAL");
-const ARRAY_ELEMENTS = createPattern("ARRAY_ELEMENTS");
-const ARRAY_ITEM = createPattern("ARRAY_ITEM");
-const RANGE_ITEM = createPattern("RANGE_ITEM");
-const OBJECT_LITERAL = createPattern("OBJECT_LITERAL");
-const OBJECT_PAIRS = createPattern("OBJECT_PAIRS");
-const OBJECT_PAIR = createPattern("OBJECT_PAIR");
-const LITERAL = createPattern("LITERAL");
-const ARG_LIST = createPattern("ARG_LIST");
-const PIPE_TAIL = createPattern("PIPE_TAIL");
-const PIPE_FUNC = createPattern("PIPE_FUNC");
-
-/* Message template patterns */
-const SEGMENT = createPattern("SEGMENT");
-const MESSAGE = createPattern("MESSAGE");
-
-function buildParser(input: string) {
-  const {
-    consume,
-    peek,
-    and,
-    or,
-    not,
-    zeroOrMany,
-    zeroOrManySep,
-    zeroOrOne,
-    patternToSkip,
-    throwIfError,
-  } = nanolex(input, tokens);
-
-  // Skip whitespace globally
-  patternToSkip(consume(Whitespace));
-
-  /**
-   * Utility builders
-   */
-  const unquote = (raw: string) =>
-    raw
-      .slice(1, -1)
-      .replace(/\\(["\\/bfnrt])/g, (_m, c) => {
-        switch (c) {
-          case '"':
-          case "\\":
-          case "/":
-            return c;
-          case "b":
-            return "\b";
-          case "f":
-            return "\f";
-          case "n":
-            return "\n";
-          case "r":
-            return "\r";
-          case "t":
-            return "\t";
-          default:
-            return c;
-        }
-      })
-      .replace(/\\u([0-9a-fA-F]{4})/g, (_m, hex) =>
-        String.fromCharCode(parseInt(hex, 16)));
-
-  /**
-   * ARG_LIST -> (EXPR (',' EXPR)*)?
-   */
-  ARG_LIST.set = zeroOrManySep(EXPR, consume(Comma));
-
-  /**
-   * FUNCTION_CALL -> Identifier '(' ARG_LIST ')'
-   */
-  FUNCTION_CALL.set = and(
-    [
-      consume(Identifier),
-      consume(LParen),
-      zeroOrOne(ARG_LIST),
-      consume(RParen),
-    ],
-    ([name, , args]) =>
-      ({
-        type: "FunctionCall",
-        name,
-        args: args ?? [],
-      }) as FunctionCall,
-  );
-
-  /**
-   * PATH parsing
-   *
-   * Relative prefix: sequence of Dot / DoubleDot before first Identifier
-   *   '.' => depth +1
-   *   '..' => depth +2
-   */
-  PATH_HEAD.set = and(
-    [
-      zeroOrMany(or([consume(Dot), consume(DoubleDot)])),
-      consume(Identifier),
-    ],
-    ([dots, ident]) => {
-      let depth = 0;
-      for (const d of dots as string[]) {
-        depth += d === ".." ? 2 : 1;
+/**
+ * Utility: unquote and unescape a JSON-like string literal.
+ */
+function unquote(raw: string): string {
+  return raw
+    .slice(1, -1)
+    .replace(/\\(["\\/bfnrt])/g, (_m, c) => {
+      switch (c) {
+        case '"':
+        case "\\":
+        case "/":
+          return c;
+        case "b":
+          return "\b";
+        case "f":
+          return "\f";
+        case "n":
+          return "\n";
+        case "r":
+          return "\r";
+        case "t":
+          return "\t";
+        default:
+          return c;
       }
-      return { depth, first: ident };
-    },
-  );
-
-  DYNAMIC_SEG.set = and(
-    [consume(LBracket), EXPR, consume(RBracket)],
-    ([, expr]) => ({ kind: "dynamic", expr } as PathSegment),
-  );
-
-  PATH_TAIL.set = zeroOrMany(
-    or([
-      // .identifier
-      and([consume(Dot), consume(Identifier)], ([, ident]) => ({
-        kind: "prop",
-        name: ident,
-      })),
-      // .number (index)
-      and([consume(Dot), consume(NumberTok)], ([, num]) => ({
-        kind: "index",
-        index: Number(num),
-      })),
-      // dynamic [...]
-      DYNAMIC_SEG,
-    ]),
-  );
-
-  PATH.set = and([
-    not(or([consume(True), consume(False), consume(NullTok)])),
-    PATH_HEAD,
-    PATH_TAIL,
-  ], ([, head, tail]) => {
-    const segments: PathSegment[] = [
-      { kind: "prop", name: head.first },
-      ...(tail as PathSegment[]),
-    ];
-    return {
-      type: "Path",
-      relative: head.depth,
-      segments,
-    } as PathExpression;
-  });
-
-  /**
-   * Literals
-   */
-  LITERAL.set = or([
-    // Negative number literal: '-' NumberTok
-    and(
-      [consume(Minus), consume(NumberTok)],
-      ([, n]) =>
-        ({ type: "NumberLiteral", value: -Number(n) }) as NumberLiteral,
-    ),
-    // Positive number literal
-    consume(
-      NumberTok,
-      (n) => ({ type: "NumberLiteral", value: Number(n) }) as NumberLiteral,
-    ),
-    consume(
-      StringTok,
-      (s) => ({ type: "StringLiteral", value: unquote(s) }) as StringLiteral,
-    ),
-    consume(
-      True,
-      () => ({ type: "BooleanLiteral", value: true }) as BooleanLiteral,
-    ),
-    consume(
-      False,
-      () => ({ type: "BooleanLiteral", value: false }) as BooleanLiteral,
-    ),
-    consume(NullTok, () => ({ type: "NullLiteral" }) as NullLiteral),
-    ARRAY_LITERAL,
-    OBJECT_LITERAL,
-  ]);
-
-  /**
-   * ARRAY_ITEM -> RANGE_ITEM | EXPR
-   * RANGE_ITEM -> EXPR '..' EXPR
-   *
-   * We attempt to parse RANGE_ITEM; if it fails, fallback to EXPR.
-   */
-  RANGE_ITEM.set = and(
-    [EXPR, consume(DoubleDot), EXPR],
-    ([start, , end]) => ({ type: "RangeLiteral", start, end }) as RangeLiteral,
-  );
-
-  ARRAY_ITEM.set = or([
-    RANGE_ITEM,
-    EXPR,
-  ]);
-
-  ARRAY_ELEMENTS.set = zeroOrManySep(ARRAY_ITEM, consume(Comma));
-
-  ARRAY_LITERAL.set = and(
-    [consume(LBracket), zeroOrOne(ARRAY_ELEMENTS), consume(RBracket)],
-    ([, elements]) =>
-      ({
-        type: "ArrayLiteral",
-        elements: (elements ?? []) as (Expression | RangeLiteral)[],
-      }) as ArrayLiteral,
-  );
-
-  /**
-   * OBJECT_LITERAL
-   */
-  OBJECT_PAIR.set = and(
-    [
-      or([consume(Identifier), consume(StringTok)]),
-      consume(Colon),
-      EXPR,
-    ],
-    ([rawKey, , value]) => {
-      const key = rawKey.startsWith('"') ? unquote(rawKey) : rawKey;
-      return { key, value } as ObjectProperty;
-    },
-  );
-
-  OBJECT_PAIRS.set = zeroOrManySep(OBJECT_PAIR, consume(Comma));
-
-  OBJECT_LITERAL.set = and(
-    [consume(LBrace), zeroOrOne(OBJECT_PAIRS), consume(RBrace)],
-    ([, props]) =>
-      ({
-        type: "ObjectLiteral",
-        properties: (props ?? []) as ObjectProperty[],
-      }) as ObjectLiteral,
-  );
-
-  /**
-   * PRIMARY
-   * Order: FunctionCall | Path | Literal | '(' EXPR ')'
-   * (FunctionCall must come before Path to disambiguate)
-   */
-  PRIMARY.set = or([
-    FUNCTION_CALL,
-    PATH,
-    LITERAL,
-    and([consume(LParen), EXPR, consume(RParen)], ([, expr]) => expr),
-  ]);
-
-  /**
-   * PIPE_FUNC
-   * An identifier optionally followed by argument list in parentheses.
-   *
-   * In pipelines, bare identifiers like:
-   *   expr | sum
-   * or with args:
-   *   expr | filter(.age > 18)
-   */
-  PIPE_FUNC.set = and(
-    [
-      consume(Identifier),
-      zeroOrOne(
-        and([consume(LParen), zeroOrOne(ARG_LIST), consume(RParen)]),
-      ),
-    ],
-    ([name, argsMaybe]) => {
-      const args = argsMaybe ? (argsMaybe[1] ?? []) : [];
-      return {
-        type: "PipeCall",
-        name,
-        args,
-      } as PipeStage;
-    },
-  );
-
-  PIPE_TAIL.set = zeroOrMany(and([consume(Pipe), PIPE_FUNC], ([, f]) => f));
-
-  /**
-   * PIPELINE: PRIMARY ('|' PIPE_FUNC)*
-   * Build PipelineExpression only if stages exist.
-   */
-  PIPELINE.set = and([PRIMARY, PIPE_TAIL], ([base, stages]) => {
-    const s = stages as PipeStage[];
-    if (s.length === 0) return base as Expression;
-    return {
-      type: "Pipeline",
-      input: base as Expression,
-      stages: s,
-    } as PipelineExpression;
-  });
-
-  /**
-   * UNARY: 'not' PIPELINE | PIPELINE
-   * (Per precedence spec, pipeline binds tighter than 'not')
-   */
-  UNARY.set = or([
-    and(
-      [consume(Not), UNARY],
-      ([, arg]) =>
-        ({
-          type: "UnaryExpression",
-          operator: "not",
-          argument: arg,
-        }) as UnaryExpression,
-    ),
-    PIPELINE,
-  ]);
-
-  /**
-   * Helper to build left-associative binary expression chains.
-   */
-  function infixChain(
-    left: Expression,
-    rest: { op: string; right: Expression }[],
-  ): Expression {
-    return rest.reduce(
-      (acc, { op, right }) =>
-        ({
-          type: "BinaryExpression",
-          operator: op,
-          left: acc,
-          right,
-        }) as BinaryExpression,
-      left,
+    })
+    .replace(
+      /\\u([0-9a-fA-F]{4})/g,
+      (_m, hex) => String.fromCharCode(parseInt(hex, 16)),
     );
-  }
-
-  /**
-   * MULTIPLICATIVE: UNARY ( ('*' | '/' | '%') UNARY )*
-   */
-  MULTIPLICATIVE.set = and(
-    [
-      UNARY,
-      zeroOrMany(
-        and(
-          [
-            or([consume(Star), consume(Slash), consume(Percent)]),
-            UNARY,
-          ],
-          ([op, right]) => ({ op, right }),
-        ),
-      ),
-    ],
-    ([first, rest]) =>
-      infixChain(
-        first as Expression,
-        rest as { op: string; right: Expression }[],
-      ),
-  );
-
-  /**
-   * ADDITIVE (& has same precedence as + - per spec)
-   * ADDITIVE: MULTIPLICATIVE (('+' | '-' | '&') MULTIPLICATIVE)*
-   */
-  ADDITIVE.set = and(
-    [
-      MULTIPLICATIVE,
-      zeroOrMany(
-        and(
-          [
-            or([consume(Plus), consume(Minus), consume(Amp)]),
-            MULTIPLICATIVE,
-          ],
-          ([op, right]) => ({ op, right }),
-        ),
-      ),
-    ],
-    ([first, rest]) =>
-      infixChain(
-        first as Expression,
-        rest as { op: string; right: Expression }[],
-      ),
-  );
-
-  /**
-   * COMPARISON: ADDITIVE ( (== != > < >= <=) ADDITIVE )*
-   * If multiple chained, left associative.
-   */
-  COMPARISON.set = and(
-    [
-      ADDITIVE,
-      zeroOrMany(
-        and(
-          [
-            or([
-              consume(EqEq),
-              consume(NotEq),
-              consume(Gte),
-              consume(Lte),
-              consume(Gt),
-              consume(Lt),
-            ]),
-            ADDITIVE,
-          ],
-          ([op, right]) => ({ op, right }),
-        ),
-      ),
-    ],
-    ([first, rest]) =>
-      infixChain(
-        first as Expression,
-        rest as { op: string; right: Expression }[],
-      ),
-  );
-
-  /**
-   * AND: COMPARISON ('and' COMPARISON)*
-   */
-  AND.set = and(
-    [
-      COMPARISON,
-      zeroOrMany(and([consume(And), COMPARISON], ([, e]) => e)),
-    ],
-    ([first, rest]) => {
-      let acc = first as Expression;
-      for (const r of rest as Expression[]) {
-        acc = {
-          type: "BinaryExpression",
-          operator: "and",
-          left: acc,
-          right: r,
-        } as BinaryExpression;
-      }
-      return acc;
-    },
-  );
-
-  /**
-   * OR: AND ('or' AND)*
-   */
-  EXPR.set = and(
-    [AND, zeroOrMany(and([consume(Or), AND], ([, e]) => e))],
-    ([first, rest]) => {
-      let acc = first as Expression;
-      for (const r of rest as Expression[]) {
-        acc = {
-          type: "BinaryExpression",
-          operator: "or",
-          left: acc,
-          right: r,
-        } as BinaryExpression;
-      }
-      return acc;
-    },
-  );
-
-  /**
-   * Message template parsing
-   * SEGMENT -> text | embed
-   */
-  SEGMENT.set = or([
-    consume(Whitespace, (value) => ({
-      kind: "text",
-      value,
-    } as TemplateTextPart)),
-    // Handle escaped left-brace: '\{' -> text '{'
-    and(
-      [consume(Escape), consume(LBrace)],
-      ([, value]) => ({ kind: "text", value } as TemplateTextPart),
-    ),
-    // Fallback: consume anything else
-    consume(Any, (value) => ({
-      kind: "text",
-      value,
-    } as TemplateTextPart)),
-    // Embeds: '{' EXPR? '}'
-    and(
-      [
-        consume(LBrace),
-        or([
-          EXPR,
-          peek(consume(RBrace, () => ({ type: "NullLiteral" } as NullLiteral))),
-        ]),
-        consume(RBrace),
-      ],
-      ([, expr]) => ({ kind: "embed", expr } as TemplateEmbedPart),
-    ),
-  ]);
-
-  /**
-   * MESSAGE -> SEGMENT*
-   */
-  MESSAGE.set = zeroOrMany(SEGMENT, (parts) => ({
-    type: "MessageTemplate",
-    parts,
-  }));
-
-  function parseExpression(): Expression {
-    const [expr] = throwIfError(and([EXPR, consume(EOF)]));
-    return expr as Expression;
-  }
-
-  function parseMsg(): MessageTemplate {
-    const [message] = throwIfError(and([MESSAGE, consume(EOF)]));
-    return message as MessageTemplate;
-  }
-
-  return { parseExpression, parseMsg };
 }
 
 /**
- * Parse a pure EQL query expression.
+ * Helper to build left-associative binary expression chains.
  */
+function chainInfix(
+  first: Expression,
+  rest: { op: string; right: Expression }[],
+): Expression {
+  return rest.reduce(
+    (acc, { op, right }) =>
+      ({
+        type: "BinaryExpression",
+        operator: op,
+        left: acc,
+        right,
+      }) as BinaryExpression,
+    first,
+  );
+}
+
+/**
+ * Build a single parser instance with rules for both expressions and message templates.
+ *
+ * Design:
+ * - No global skip rule: we need to capture whitespace in message templates.
+ * - Expression root rule (EXPR) installs local skip (Whitespace) via skipIn.
+ */
+const parser = createParser(
+  tokens,
+  {
+    /* ---------- Expression Grammar (with precedence) ---------- */
+
+    EXPR() {
+      // Local whitespace skipping for the whole expression tree.
+      return skipIn(consume(Whitespace), rule(this.OR));
+    },
+
+    OR(): Grammar<BinaryExpression | Expression> {
+      return and(
+        [
+          rule(this.AND),
+          zeroOrMany(and([consume(OrTok), rule(this.AND)], ([, e]) => e)),
+        ],
+        ([first, rest]) => {
+          let acc = first as Expression;
+          for (const r of rest as Expression[]) {
+            acc = {
+              type: "BinaryExpression",
+              operator: "or",
+              left: acc,
+              right: r,
+            } as BinaryExpression;
+          }
+          return acc;
+        },
+      );
+    },
+
+    AND(): Grammar<BinaryExpression | Expression> {
+      return and(
+        [
+          rule(this.COMPARISON),
+          zeroOrMany(
+            and([consume(AndTok), rule(this.COMPARISON)], ([, e]) => e),
+          ),
+        ],
+        ([first, rest]) => {
+          let acc = first as Expression;
+          for (const r of rest as Expression[]) {
+            acc = {
+              type: "BinaryExpression",
+              operator: "and",
+              left: acc,
+              right: r,
+            } as BinaryExpression;
+          }
+          return acc;
+        },
+      );
+    },
+
+    COMPARISON() {
+      return and(
+        [
+          rule(this.ADDITIVE),
+          zeroOrMany(
+            and(
+              [
+                or([
+                  consume(EqEq),
+                  consume(NotEq),
+                  consume(Gte),
+                  consume(Lte),
+                  consume(Gt),
+                  consume(Lt),
+                ]),
+                rule(this.ADDITIVE),
+              ],
+              ([op, right]) => ({ op, right }),
+            ),
+          ),
+        ],
+        ([first, rest]) =>
+          chainInfix(
+            first as Expression,
+            rest as { op: string; right: Expression }[],
+          ),
+      );
+    },
+
+    ADDITIVE() {
+      return and(
+        [
+          rule(this.MULTIPLICATIVE),
+          zeroOrMany(
+            and(
+              [
+                or([
+                  consume(Plus),
+                  consume(Minus),
+                  consume(Amp),
+                ]),
+                rule(this.MULTIPLICATIVE),
+              ],
+              ([op, right]) => ({ op, right }),
+            ),
+          ),
+        ],
+        ([first, rest]) =>
+          chainInfix(
+            first as Expression,
+            rest as { op: string; right: Expression }[],
+          ),
+      );
+    },
+
+    MULTIPLICATIVE() {
+      return and(
+        [
+          rule(this.UNARY),
+          zeroOrMany(
+            and(
+              [
+                or([
+                  consume(Star),
+                  consume(Slash),
+                  consume(Percent),
+                ]),
+                rule(this.UNARY),
+              ],
+              ([op, right]) => ({ op, right }),
+            ),
+          ),
+        ],
+        ([first, rest]) =>
+          chainInfix(
+            first as Expression,
+            rest as { op: string; right: Expression }[],
+          ),
+      );
+    },
+
+    UNARY(): Grammar<UnaryExpression | PipelineExpression | Expression> {
+      return or([
+        and(
+          [consume(NotTok), rule(this.UNARY)],
+          ([, arg]) =>
+            ({
+              type: "UnaryExpression",
+              operator: "not",
+              argument: arg,
+            }) as UnaryExpression,
+        ),
+        rule(this.PIPELINE),
+      ]);
+    },
+
+    PIPELINE(): Grammar<PipelineExpression | Expression> {
+      return and(
+        [
+          rule(this.PRIMARY),
+          zeroOrMany(
+            and(
+              [consume(PipeTok), rule(this.PIPE_FUNC)],
+              ([, f]) => f,
+            ),
+          ),
+        ],
+        ([base, stages]) => {
+          const s = stages as PipeStage[];
+          if (s.length === 0) return base as Expression;
+          return {
+            type: "Pipeline",
+            input: base as Expression,
+            stages: s,
+          } as PipelineExpression;
+        },
+      );
+    },
+
+    PRIMARY() {
+      return or([
+        rule(this.FUNCTION_CALL),
+        rule(this.PATH),
+        rule(this.LITERAL),
+        and(
+          [consume(LParen), rule(this.EXPR), consume(RParen)],
+          ([, expr]) => expr,
+        ),
+      ]);
+    },
+
+    FUNCTION_CALL(): Grammar<FunctionCall> {
+      return and(
+        [
+          consume(Identifier),
+          consume(LParen),
+          zeroOrOne(rule(this.ARG_LIST)),
+          consume(RParen),
+        ],
+        ([name, , args]) =>
+          ({
+            type: "FunctionCall",
+            name,
+            args: (args ?? []) as Expression[],
+          }) as FunctionCall,
+      );
+    },
+
+    ARG_LIST() {
+      return zeroOrManySep(rule(this.EXPR), consume(Comma));
+    },
+
+    /* ---------- Path Parsing ---------- */
+
+    PATH(): Grammar<PathExpression> {
+      return and(
+        [
+          not(or([consume(True), consume(False), consume(NullTok)])),
+          rule(this.PATH_HEAD),
+          rule(this.PATH_TAIL),
+        ],
+        ([, head, tail]) => {
+          const segments: PathSegment[] = [
+            { kind: "prop", name: head.first },
+            ...(tail as PathSegment[]),
+          ];
+          return {
+            type: "Path",
+            relative: head.depth,
+            segments,
+          } as PathExpression;
+        },
+      );
+    },
+
+    PATH_HEAD() {
+      return and(
+        [
+          zeroOrMany(or([consume(Dot), consume(DoubleDot)])),
+          consume(Identifier),
+        ],
+        ([dots, ident]) => {
+          let depth = 0;
+          for (const d of dots as string[]) {
+            depth += d === ".." ? 2 : 1;
+          }
+          return { depth, first: ident };
+        },
+      );
+    },
+
+    PATH_TAIL() {
+      return zeroOrMany(
+        or([
+          and(
+            [consume(Dot), consume(Identifier)],
+            ([, ident]) => ({ kind: "prop", name: ident } as PathSegment),
+          ),
+          and(
+            [consume(Dot), consume(NumberTok)],
+            ([, num]) => ({ kind: "index", index: Number(num) } as PathSegment),
+          ),
+          rule(this.DYNAMIC_SEG),
+        ]),
+      );
+    },
+
+    DYNAMIC_SEG(): Grammar<PathSegment> {
+      return and(
+        [consume(LBracket), rule(this.EXPR), consume(RBracket)],
+        ([, expr]) => ({ kind: "dynamic", expr } as PathSegment),
+      );
+    },
+
+    /* ---------- Literals ---------- */
+
+    LITERAL() {
+      return or([
+        and(
+          [consume(Minus), consume(NumberTok)],
+          ([, n]) =>
+            ({ type: "NumberLiteral", value: -Number(n) }) as NumberLiteral,
+        ),
+        consume(
+          NumberTok,
+          (n) => ({ type: "NumberLiteral", value: Number(n) }) as NumberLiteral,
+        ),
+        consume(
+          StringTok,
+          (s) =>
+            ({ type: "StringLiteral", value: unquote(s) }) as StringLiteral,
+        ),
+        consume(
+          True,
+          () => ({ type: "BooleanLiteral", value: true }) as BooleanLiteral,
+        ),
+        consume(
+          False,
+          () => ({ type: "BooleanLiteral", value: false }) as BooleanLiteral,
+        ),
+        consume(
+          NullTok,
+          () => ({ type: "NullLiteral" }) as NullLiteral,
+        ),
+        rule(this.ARRAY_LITERAL),
+        rule(this.OBJECT_LITERAL),
+      ]);
+    },
+
+    ARRAY_LITERAL(): Grammar<ArrayLiteral> {
+      return and(
+        [
+          consume(LBracket),
+          zeroOrOne(rule(this.ARRAY_ELEMENTS)),
+          consume(RBracket),
+        ],
+        ([, elements]) =>
+          ({
+            type: "ArrayLiteral",
+            elements: (elements ?? []) as (Expression | RangeLiteral)[],
+          }) as ArrayLiteral,
+      );
+    },
+
+    ARRAY_ELEMENTS() {
+      return zeroOrManySep(rule(this.ARRAY_ITEM), consume(Comma));
+    },
+
+    ARRAY_ITEM() {
+      return or([
+        rule(this.RANGE_ITEM),
+        rule(this.EXPR),
+      ]);
+    },
+
+    RANGE_ITEM(): Grammar<RangeLiteral> {
+      return and(
+        [rule(this.EXPR), consume(DoubleDot), rule(this.EXPR)],
+        ([start, , end]) =>
+          ({ type: "RangeLiteral", start, end }) as RangeLiteral,
+      );
+    },
+
+    OBJECT_LITERAL(): Grammar<ObjectLiteral> {
+      return and(
+        [
+          consume(LBrace),
+          zeroOrOne(rule(this.OBJECT_PAIRS)),
+          consume(RBrace),
+        ],
+        ([, props]) =>
+          ({
+            type: "ObjectLiteral",
+            properties: (props ?? []) as ObjectProperty[],
+          }) as ObjectLiteral,
+      );
+    },
+
+    OBJECT_PAIRS() {
+      return zeroOrManySep(rule(this.OBJECT_PAIR), consume(Comma));
+    },
+
+    OBJECT_PAIR(): Grammar<ObjectProperty> {
+      return and(
+        [
+          or([consume(Identifier), consume(StringTok)]),
+          consume(Colon),
+          rule(this.EXPR),
+        ],
+        ([rawKey, , value]) => {
+          const key = rawKey.startsWith('"') ? unquote(rawKey) : rawKey;
+          return { key, value } as ObjectProperty;
+        },
+      );
+    },
+
+    /* ---------- Pipeline Function Stage ---------- */
+
+    PIPE_FUNC(): Grammar<PipeStage> {
+      return and(
+        [
+          consume(Identifier),
+          zeroOrOne(
+            and([
+              consume(LParen),
+              zeroOrOne(rule(this.ARG_LIST)),
+              consume(RParen),
+            ]),
+          ),
+        ],
+        ([name, argsMaybe]) => {
+          const args = argsMaybe ? (argsMaybe[1] ?? []) : [];
+          return {
+            type: "PipeCall",
+            name,
+            args,
+          } as PipeStage;
+        },
+      );
+    },
+
+    /* ---------- Message Template Grammar ---------- */
+
+    SEGMENT() {
+      return or([
+        // Escaped brace: \{
+        and(
+          [consume(Escape), consume(LBrace)],
+          ([, value]) => ({ kind: "text", value } as TemplateTextPart),
+        ),
+        // Embed: { EXPR? }
+        and(
+          [
+            consume(LBrace),
+            or([
+              rule(this.EXPR),
+              skipIn(
+                consume(Whitespace),
+                peek(
+                  consume(
+                    RBrace,
+                    () => ({ type: "NullLiteral" } as NullLiteral),
+                  ),
+                ),
+              ),
+            ]),
+            consume(RBrace),
+          ],
+          ([, expr]) => ({ kind: "embed", expr } as TemplateEmbedPart),
+        ),
+        // Fallback text
+        consume(
+          Any,
+          (value) => ({ kind: "text", value } as TemplateTextPart),
+        ),
+      ]);
+    },
+
+    MESSAGE(): Grammar<MessageTemplate> {
+      return zeroOrMany(rule(this.SEGMENT), (parts) =>
+        ({
+          type: "MessageTemplate",
+          parts,
+        }) as MessageTemplate);
+    },
+  },
+);
+
 export function parseQuery(input: string): Expression {
-  const { parseExpression } = buildParser(input);
-  return parseExpression();
+  return parser("EXPR", input) as Expression;
 }
 
 export function parseMessage(input: string): MessageTemplate {
-  const { parseMsg } = buildParser(input);
-  return parseMsg();
+  return parser("MESSAGE", input) as MessageTemplate;
 }

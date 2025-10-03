@@ -3,6 +3,6 @@
     "dev": "deno run --watch src/main.ts"
   },
   "imports": {
-    "nanolex": "npm:nanolex@^0.7.0"
+    "nanolex": "npm:nanolex@^0.8.1"
   }
 }
