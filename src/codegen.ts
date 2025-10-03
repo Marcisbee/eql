@@ -10,6 +10,21 @@ import type {
   RangeLiteral,
   UnaryExpression,
 } from "./ast-types.ts";
+import {
+  ARRAY_LITERAL,
+  BINARY_EXPRESSION,
+  BOOLEAN_LITERAL,
+  FUNCTION_CALL,
+  NULL_LITERAL,
+  NUMBER_LITERAL,
+  OBJECT_LITERAL,
+  PATH,
+  PIPELINE,
+  RANGE_LITERAL,
+  STRING_LITERAL,
+  TEMPLATE_TEXT_KIND,
+  UNARY_EXPRESSION,
+} from "./ast-node-types.ts";
 
 type CodeGenContext = {
   scopes: string[]; // iter variables stack for nested filter/map
@@ -36,7 +51,7 @@ export function generateMessageParts(
   tpl: MessageTemplate,
 ): { code: string; isExpr: boolean }[] {
   return tpl.parts.map((p) => {
-    if (p.kind === "text") {
+    if (p.kind === TEMPLATE_TEXT_KIND) {
       return { code: JSON.stringify(p.value), isExpr: false };
     }
     return { code: genExpr(p.expr, { scopes: [] }), isExpr: true };
@@ -48,29 +63,29 @@ export function generateMessageParts(
  */
 function genExpr(node: Expression, ctx: CodeGenContext): string {
   switch (node.type) {
-    case "NumberLiteral":
+    case NUMBER_LITERAL:
       return String(node.value);
-    case "StringLiteral":
+    case STRING_LITERAL:
       return JSON.stringify(node.value);
-    case "BooleanLiteral":
+    case BOOLEAN_LITERAL:
       return node.value ? "true" : "false";
-    case "NullLiteral":
+    case NULL_LITERAL:
       return "null";
-    case "Path":
+    case PATH:
       return genPath(node, ctx);
-    case "RangeLiteral":
+    case RANGE_LITERAL:
       return genRange(node, ctx);
-    case "ArrayLiteral":
+    case ARRAY_LITERAL:
       return genArray(node, ctx);
-    case "ObjectLiteral":
+    case OBJECT_LITERAL:
       return genObject(node, ctx);
-    case "FunctionCall":
+    case FUNCTION_CALL:
       return genFunctionCall(node, ctx);
-    case "UnaryExpression":
+    case UNARY_EXPRESSION:
       return genUnary(node, ctx);
-    case "BinaryExpression":
+    case BINARY_EXPRESSION:
       return genBinary(node, ctx);
-    case "Pipeline":
+    case PIPELINE:
       return genPipeline(node, ctx);
     default:
       return "/*unknown-node*/";
@@ -104,7 +119,7 @@ function genRange(r: RangeLiteral, ctx: CodeGenContext): string {
 function genArray(arr: ArrayLiteral, ctx: CodeGenContext): string {
   return `[${
     arr.elements.map((el) =>
-      el.type === "RangeLiteral"
+      el.type === RANGE_LITERAL
         ? genRange(el as RangeLiteral, ctx)
         : genExpr(el as Expression, ctx)
     ).join(",")

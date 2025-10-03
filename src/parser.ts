@@ -34,6 +34,24 @@ import type {
   TemplateTextPart,
   UnaryExpression,
 } from "./ast-types.ts";
+import {
+  ARRAY_LITERAL,
+  BINARY_EXPRESSION,
+  BOOLEAN_LITERAL,
+  FUNCTION_CALL,
+  MESSAGE_TEMPLATE,
+  NULL_LITERAL,
+  NUMBER_LITERAL,
+  OBJECT_LITERAL,
+  PATH,
+  PIPE_CALL,
+  PIPELINE,
+  RANGE_LITERAL,
+  STRING_LITERAL,
+  TEMPLATE_EMBED_KIND,
+  TEMPLATE_TEXT_KIND,
+  UNARY_EXPRESSION,
+} from "./ast-node-types.ts";
 
 /* ---------------------------------- Tokens --------------------------------- */
 const Whitespace = createToken(/[ \t\r\n]+/, "Whitespace");
@@ -164,7 +182,7 @@ function chainInfix(first: Expression, rest: OpRight[]): Expression {
   return rest.reduce(
     (acc, { op, right }) =>
       ({
-        type: "BinaryExpression",
+        type: BINARY_EXPRESSION,
         operator: op,
         left: acc,
         right,
@@ -267,7 +285,7 @@ const parser = createParser(
           [consume(NotTok), rule(this.UNARY)],
           ([, arg]) =>
             ({
-              type: "UnaryExpression",
+              type: UNARY_EXPRESSION,
               operator: "not",
               argument: arg,
             }) as UnaryExpression,
@@ -288,7 +306,7 @@ const parser = createParser(
           const s = stages as PipeStage[];
           if (s.length === 0) return base as Expression;
           return {
-            type: "Pipeline",
+            type: PIPELINE,
             input: base as Expression,
             stages: s,
           } as PipelineExpression;
@@ -318,7 +336,7 @@ const parser = createParser(
         ],
         ([name, , args]) =>
           ({
-            type: "FunctionCall",
+            type: FUNCTION_CALL,
             name,
             args: (args ?? []) as Expression[],
           }) as FunctionCall,
@@ -343,7 +361,7 @@ const parser = createParser(
             ...(tail as PathSegment[]),
           ];
           return {
-            type: "Path",
+            type: PATH,
             relative: head.depth,
             segments,
           } as PathExpression;
@@ -396,28 +414,27 @@ const parser = createParser(
         and(
           [consume(Minus), consume(NumberTok)],
           ([, n]) =>
-            ({ type: "NumberLiteral", value: -Number(n) }) as NumberLiteral,
+            ({ type: NUMBER_LITERAL, value: -Number(n) }) as NumberLiteral,
         ),
         consume(
           NumberTok,
-          (n) => ({ type: "NumberLiteral", value: Number(n) }) as NumberLiteral,
+          (n) => ({ type: NUMBER_LITERAL, value: Number(n) }) as NumberLiteral,
         ),
         consume(
           StringTok,
-          (s) =>
-            ({ type: "StringLiteral", value: unquote(s) }) as StringLiteral,
+          (s) => ({ type: STRING_LITERAL, value: unquote(s) }) as StringLiteral,
         ),
         consume(
           True,
-          () => ({ type: "BooleanLiteral", value: true }) as BooleanLiteral,
+          () => ({ type: BOOLEAN_LITERAL, value: true }) as BooleanLiteral,
         ),
         consume(
           False,
-          () => ({ type: "BooleanLiteral", value: false }) as BooleanLiteral,
+          () => ({ type: BOOLEAN_LITERAL, value: false }) as BooleanLiteral,
         ),
         consume(
           NullTok,
-          () => ({ type: "NullLiteral" }) as NullLiteral,
+          () => ({ type: NULL_LITERAL }) as NullLiteral,
         ),
         rule(this.ARRAY_LITERAL),
         rule(this.OBJECT_LITERAL),
@@ -433,7 +450,7 @@ const parser = createParser(
         ],
         ([, elements]) =>
           ({
-            type: "ArrayLiteral",
+            type: ARRAY_LITERAL,
             elements: (elements ?? []) as (Expression | RangeLiteral)[],
           }) as ArrayLiteral,
       );
@@ -454,7 +471,7 @@ const parser = createParser(
       return and(
         [rule(this.EXPR), consume(DoubleDot), rule(this.EXPR)],
         ([start, , end]) =>
-          ({ type: "RangeLiteral", start, end }) as RangeLiteral,
+          ({ type: RANGE_LITERAL, start, end }) as RangeLiteral,
       );
     },
 
@@ -467,7 +484,7 @@ const parser = createParser(
         ],
         ([, props]) =>
           ({
-            type: "ObjectLiteral",
+            type: OBJECT_LITERAL,
             properties: (props ?? []) as ObjectProperty[],
           }) as ObjectLiteral,
       );
@@ -507,7 +524,7 @@ const parser = createParser(
         ([name, argsMaybe]) => {
           const args = argsMaybe ? (argsMaybe[1] ?? []) : [];
           return {
-            type: "PipeCall",
+            type: PIPE_CALL,
             name,
             args,
           } as PipeStage;
@@ -521,7 +538,9 @@ const parser = createParser(
         // Escaped brace: \{
         and(
           [consume(Escape), consume(LBrace)],
-          ([, value]) => ({ kind: "text", value } as TemplateTextPart),
+          (
+            [, value],
+          ) => ({ kind: TEMPLATE_TEXT_KIND, value } as TemplateTextPart),
         ),
         // Embed: { EXPR? }
         and(
@@ -534,19 +553,21 @@ const parser = createParser(
                 peek(
                   consume(
                     RBrace,
-                    () => ({ type: "NullLiteral" } as NullLiteral),
+                    () => ({ type: NULL_LITERAL } as NullLiteral),
                   ),
                 ),
               ),
             ]),
             consume(RBrace),
           ],
-          ([, expr]) => ({ kind: "embed", expr } as TemplateEmbedPart),
+          (
+            [, expr],
+          ) => ({ kind: TEMPLATE_EMBED_KIND, expr } as TemplateEmbedPart),
         ),
         // Fallback text
         consume(
           Any,
-          (value) => ({ kind: "text", value } as TemplateTextPart),
+          (value) => ({ kind: TEMPLATE_TEXT_KIND, value } as TemplateTextPart),
         ),
       ]);
     },
@@ -554,7 +575,7 @@ const parser = createParser(
     MESSAGE(): Grammar<MessageTemplate> {
       return zeroOrMany(rule(this.SEGMENT), (parts) =>
         ({
-          type: "MessageTemplate",
+          type: MESSAGE_TEMPLATE,
           parts,
         }) as MessageTemplate);
     },
