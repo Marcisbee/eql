@@ -533,7 +533,7 @@ const parser = createParser(
             skipIn(
               consume(Whitespace),
               or([
-                rule(this.EXPR),
+                rule(this.OR),
                 peek(
                   consume(
                     RBrace,
