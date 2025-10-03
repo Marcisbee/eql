@@ -4,7 +4,6 @@ import {
   createParser,
   createToken,
   Grammar,
-  not,
   or,
   peek,
   rule,
@@ -176,46 +175,43 @@ interface OpRight {
 /**
  * Build left-associative chains of binary expressions.
  */
-function chainInfix(first: Expression, rest: OpRight[]): Expression {
-  return rest.reduce(
-    (acc, { op, right }) =>
-      ({
-        type: BINARY_EXPRESSION,
-        operator: op,
-        left: acc,
-        right,
-      }) as BinaryExpression,
-    first,
-  );
+function chainInfix(
+  [first, rest]: [first: Expression, rest: OpRight[]],
+): Expression {
+  let acc = first as Expression;
+  const ops = rest as OpRight[];
+  for (let i = 0; i < ops.length; i++) {
+    const { op, right } = ops[i];
+    acc = ({
+      type: BINARY_EXPRESSION,
+      operator: op,
+      left: acc,
+      right,
+    }) as BinaryExpression;
+  }
+  return acc;
 }
 
-/* Reusable operator choice grammars */
-const OrOp = consume(OrTok);
-const AndOp = consume(AndTok);
-const CompareOps = or([
-  consume(EqEq),
-  consume(NotEq),
-  consume(Gte),
-  consume(Lte),
-  consume(Gt),
-  consume(Lt),
-]);
-const AddOps = or([
-  consume(Plus),
-  consume(Minus),
-  consume(Amp), // string concatenation
-]);
-const MulOps = or([
-  consume(Star),
-  consume(Slash),
-  consume(Percent),
-]);
-
-/* Map small tuple -> OpRight */
-const mapOpRight = (values: readonly unknown[]): OpRight => ({
-  op: values[0] as string,
-  right: values[1] as Expression,
-});
+/**
+ * Generic helper to build a left-associative operator level.
+ * term: grammar for the next higher-precedence expression
+ * op: grammar that consumes and returns an operator token/string
+ */
+function leftAssoc(
+  term: Grammar<Expression>,
+  op: Grammar<string>,
+): Grammar<Expression> {
+  return and(
+    [
+      term,
+      zeroOrMany(and([op, term], (values): OpRight => ({
+        op: values[0] as string,
+        right: values[1] as Expression,
+      }))),
+    ],
+    chainInfix as any,
+  );
+}
 
 /* ------------------------------- Parser Grammar ----------------------------- */
 const parser = createParser(
@@ -223,57 +219,50 @@ const parser = createParser(
   {
     /* ----------------------- Expression Grammar Root ----------------------- */
     EXPR() {
-      // Skip whitespace only inside expression tree.
       return skipIn(consume(Whitespace), rule(this.OR));
     },
 
     OR(): Grammar<Expression> {
-      return and(
-        [
-          rule(this.AND),
-          zeroOrMany(and([OrOp, rule(this.AND)], mapOpRight)),
-        ],
-        ([first, rest]) => chainInfix(first as Expression, rest as OpRight[]),
-      );
+      return leftAssoc(rule(this.AND), consume(OrTok));
     },
 
     AND(): Grammar<Expression> {
-      return and(
-        [
-          rule(this.COMPARISON),
-          zeroOrMany(and([AndOp, rule(this.COMPARISON)], mapOpRight)),
-        ],
-        ([first, rest]) => chainInfix(first as Expression, rest as OpRight[]),
-      );
+      return leftAssoc(rule(this.COMPARISON), consume(AndTok));
     },
 
     COMPARISON(): Grammar<Expression> {
-      return and(
-        [
-          rule(this.ADDITIVE),
-          zeroOrMany(and([CompareOps, rule(this.ADDITIVE)], mapOpRight)),
-        ],
-        ([first, rest]) => chainInfix(first as Expression, rest as OpRight[]),
+      return leftAssoc(
+        rule(this.ADDITIVE),
+        or([
+          consume(EqEq),
+          consume(NotEq),
+          consume(Gte),
+          consume(Lte),
+          consume(Gt),
+          consume(Lt),
+        ]),
       );
     },
 
     ADDITIVE(): Grammar<Expression> {
-      return and(
-        [
-          rule(this.MULTIPLICATIVE),
-          zeroOrMany(and([AddOps, rule(this.MULTIPLICATIVE)], mapOpRight)),
-        ],
-        ([first, rest]) => chainInfix(first as Expression, rest as OpRight[]),
+      return leftAssoc(
+        rule(this.MULTIPLICATIVE),
+        or([
+          consume(Plus),
+          consume(Minus),
+          consume(Amp),
+        ]),
       );
     },
 
     MULTIPLICATIVE(): Grammar<Expression> {
-      return and(
-        [
-          rule(this.UNARY),
-          zeroOrMany(and([MulOps, rule(this.UNARY)], mapOpRight)),
-        ],
-        ([first, rest]) => chainInfix(first as Expression, rest as OpRight[]),
+      return leftAssoc(
+        rule(this.UNARY),
+        or([
+          consume(Star),
+          consume(Slash),
+          consume(Percent),
+        ]),
       );
     },
 
@@ -318,7 +307,7 @@ const parser = createParser(
         rule(this.PATH),
         rule(this.LITERAL),
         and(
-          [consume(LParen), rule(this.EXPR), consume(RParen)],
+          [consume(LParen), rule(this.OR), consume(RParen)],
           ([, expr]) => expr,
         ),
       ]);
@@ -336,26 +325,37 @@ const parser = createParser(
           ({
             type: FUNCTION_CALL,
             name,
-            args: (args ?? []) as Expression[],
+            args: args as Expression[],
           }) as FunctionCall,
       );
     },
 
     ARG_LIST() {
-      return zeroOrManySep(rule(this.EXPR), consume(Comma));
+      return zeroOrManySep(rule(this.OR), consume(Comma));
     },
 
     /* ------------------------------ Path Parsing --------------------------- */
-    PATH(): Grammar<PathExpression> {
+    PATH(): Grammar<PathExpression | BooleanLiteral | NullLiteral> {
       return and(
         [
-          not(or([consume(True), consume(False), consume(NullTok)])),
           rule(this.PATH_HEAD),
           rule(this.PATH_TAIL),
         ],
-        ([, head, tail]) => {
+        ([head, tail]) => {
+          if (head.first === "true") {
+            return { type: BOOLEAN_LITERAL, value: true } as BooleanLiteral;
+          }
+
+          if (head.first === "false") {
+            return { type: BOOLEAN_LITERAL, value: false } as BooleanLiteral;
+          }
+
+          if (head.first === "null") {
+            return { type: NULL_LITERAL } as NullLiteral;
+          }
+
           const segments: PathSegment[] = [
-            { kind: "prop", name: head.first },
+            { kind: "prop", name: head.first } as PathSegment,
             ...(tail as PathSegment[]),
           ];
           return {
@@ -383,12 +383,22 @@ const parser = createParser(
       return zeroOrMany(
         or([
           and(
-            [consume(Dot), consume(Identifier)],
-            ([, ident]) => ({ kind: "prop", name: ident } as PathSegment),
-          ),
-          and(
-            [consume(Dot), consume(NumberTok)],
-            ([, num]) => ({ kind: "index", index: Number(num) } as PathSegment),
+            [
+              consume(Dot),
+              or([
+                consume(
+                  Identifier,
+                  (ident) => ({ kind: "prop", name: ident } as PathSegment),
+                ),
+                consume(
+                  NumberTok,
+                  (
+                    num,
+                  ) => ({ kind: "index", index: Number(num) } as PathSegment),
+                ),
+              ]),
+            ],
+            ([, seg]) => seg as PathSegment,
           ),
           rule(this.DYNAMIC_SEG),
         ]),
@@ -418,18 +428,6 @@ const parser = createParser(
           StringTok,
           (s) => ({ type: STRING_LITERAL, value: unquote(s) }) as StringLiteral,
         ),
-        consume(
-          True,
-          () => ({ type: BOOLEAN_LITERAL, value: true }) as BooleanLiteral,
-        ),
-        consume(
-          False,
-          () => ({ type: BOOLEAN_LITERAL, value: false }) as BooleanLiteral,
-        ),
-        consume(
-          NullTok,
-          () => ({ type: NULL_LITERAL }) as NullLiteral,
-        ),
         rule(this.ARRAY_LITERAL),
         rule(this.OBJECT_LITERAL),
       ]);
@@ -445,7 +443,7 @@ const parser = createParser(
         ([, elements]) =>
           ({
             type: ARRAY_LITERAL,
-            elements: (elements ?? []) as (Expression | RangeLiteral)[],
+            elements: elements as (Expression | RangeLiteral)[],
           }) as ArrayLiteral,
       );
     },
@@ -457,13 +455,13 @@ const parser = createParser(
     ARRAY_ITEM() {
       return or([
         rule(this.RANGE_ITEM),
-        rule(this.EXPR),
+        rule(this.OR),
       ]);
     },
 
     RANGE_ITEM(): Grammar<RangeLiteral> {
       return and(
-        [rule(this.EXPR), consume(Dot), consume(Dot), rule(this.EXPR)],
+        [rule(this.OR), consume(Dot), consume(Dot), rule(this.OR)],
         ([start, , , end]) =>
           ({ type: RANGE_LITERAL, start, end }) as RangeLiteral,
       );
@@ -479,7 +477,7 @@ const parser = createParser(
         ([, props]) =>
           ({
             type: OBJECT_LITERAL,
-            properties: (props ?? []) as ObjectProperty[],
+            properties: props as ObjectProperty[],
           }) as ObjectLiteral,
       );
     },
@@ -491,12 +489,11 @@ const parser = createParser(
     OBJECT_PAIR(): Grammar<ObjectProperty> {
       return and(
         [
-          or([consume(Identifier), consume(StringTok)]),
+          or([consume(Identifier), consume(StringTok, unquote)]),
           consume(Colon),
-          rule(this.EXPR),
+          rule(this.OR),
         ],
-        ([rawKey, , value]) => {
-          const key = rawKey.startsWith('"') ? unquote(rawKey) : rawKey;
+        ([key, , value]) => {
           return { key, value } as ObjectProperty;
         },
       );
@@ -529,14 +526,12 @@ const parser = createParser(
     /* ------------------------- Message Template Grammar ------------------- */
     SEGMENT() {
       return or([
-        // Escaped brace: \{
         and(
           [consume(Escape), consume(LBrace)],
           (
             [, value],
           ) => ({ kind: TEMPLATE_TEXT_KIND, value } as TemplateTextPart),
         ),
-        // Embed: { EXPR? }
         and(
           [
             consume(LBrace),
@@ -558,7 +553,6 @@ const parser = createParser(
             [, expr],
           ) => ({ kind: TEMPLATE_EMBED_KIND, expr } as TemplateEmbedPart),
         ),
-        // Fallback text
         consume(
           Any,
           (value) => ({ kind: TEMPLATE_TEXT_KIND, value } as TemplateTextPart),
