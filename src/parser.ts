@@ -61,7 +61,6 @@ const EqEq = createToken("==");
 const NotEq = createToken("!=");
 const Gte = createToken(">=");
 const Lte = createToken("<=");
-const DoubleDot = createToken("..");
 
 /* Single-character punctuation / operators */
 const Dot = createToken(".");
@@ -112,7 +111,6 @@ const tokens = [
   NotEq,
   Gte,
   Lte,
-  DoubleDot,
   Dot,
   LParen,
   RParen,
@@ -372,15 +370,11 @@ const parser = createParser(
     PATH_HEAD() {
       return and(
         [
-          zeroOrMany(or([consume(Dot), consume(DoubleDot)])),
+          zeroOrMany(consume(Dot)),
           consume(Identifier),
         ],
         ([dots, ident]) => {
-          let depth = 0;
-          for (const d of dots as string[]) {
-            depth += d === ".." ? 2 : 1;
-          }
-          return { depth, first: ident };
+          return { depth: dots.length, first: ident };
         },
       );
     },
@@ -469,8 +463,8 @@ const parser = createParser(
 
     RANGE_ITEM(): Grammar<RangeLiteral> {
       return and(
-        [rule(this.EXPR), consume(DoubleDot), rule(this.EXPR)],
-        ([start, , end]) =>
+        [rule(this.EXPR), consume(Dot), consume(Dot), rule(this.EXPR)],
+        ([start, , , end]) =>
           ({ type: RANGE_LITERAL, start, end }) as RangeLiteral,
       );
     },
