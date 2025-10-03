@@ -173,26 +173,6 @@ interface OpRight {
 }
 
 /**
- * Build left-associative chains of binary expressions.
- */
-function chainInfix(
-  [first, rest]: [first: Expression, rest: OpRight[]],
-): Expression {
-  let acc = first as Expression;
-  const ops = rest as OpRight[];
-  for (let i = 0; i < ops.length; i++) {
-    const { op, right } = ops[i];
-    acc = ({
-      type: BINARY_EXPRESSION,
-      operator: op,
-      left: acc,
-      right,
-    }) as BinaryExpression;
-  }
-  return acc;
-}
-
-/**
  * Generic helper to build a left-associative operator level.
  * term: grammar for the next higher-precedence expression
  * op: grammar that consumes and returns an operator token/string
@@ -209,7 +189,22 @@ function leftAssoc(
         right: values[1] as Expression,
       }))),
     ],
-    chainInfix as any,
+    (
+      [first, rest],
+    ) => {
+      let acc = first as Expression;
+      const ops = rest as OpRight[];
+      for (let i = 0; i < ops.length; i++) {
+        const { op, right } = ops[i];
+        acc = ({
+          type: BINARY_EXPRESSION,
+          operator: op,
+          left: acc,
+          right,
+        }) as BinaryExpression;
+      }
+      return acc;
+    },
   );
 }
 
