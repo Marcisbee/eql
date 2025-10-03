@@ -128,7 +128,6 @@ const tokens = [
   Amp,
   Gt,
   Lt,
-  Escape,
   NumberTok,
   StringTok,
 ];
@@ -349,14 +348,13 @@ const parser = createParser(
             return { type: NULL_LITERAL } as NullLiteral;
           }
 
-          const segments: PathSegment[] = [
-            { kind: "prop", name: head.first } as PathSegment,
-            ...(tail as PathSegment[]),
-          ];
           return {
             type: PATH,
             relative: head.depth,
-            segments,
+            segments: [
+              { kind: "prop", name: head.first } as PathSegment,
+              ...(tail as PathSegment[]),
+            ] as PathSegment[],
           } as PathExpression;
         },
       );
@@ -508,11 +506,10 @@ const parser = createParser(
           ),
         ],
         ([name, argsMaybe]) => {
-          const args = argsMaybe ? (argsMaybe[1] ?? []) : [];
           return {
             type: PIPE_CALL,
             name,
-            args,
+            args: argsMaybe ? argsMaybe[1] : [],
           } as PipeStage;
         },
       );
