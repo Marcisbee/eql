@@ -402,7 +402,7 @@ const parser = createParser(
 
     DYNAMIC_SEG(): Grammar<PathSegment> {
       return and(
-        [consume(LBracket), rule(this.EXPR), consume(RBracket)],
+        [consume(LBracket), rule(this.OR), consume(RBracket)],
         ([, expr]) => ({ kind: "dynamic", expr } as PathSegment),
       );
     },
@@ -530,18 +530,18 @@ const parser = createParser(
         and(
           [
             consume(LBrace),
-            or([
-              rule(this.EXPR),
-              skipIn(
-                consume(Whitespace),
+            skipIn(
+              consume(Whitespace),
+              or([
+                rule(this.EXPR),
                 peek(
                   consume(
                     RBrace,
                     () => ({ type: NULL_LITERAL } as NullLiteral),
                   ),
                 ),
-              ),
-            ]),
+              ]),
+            ),
             consume(RBrace),
           ],
           (

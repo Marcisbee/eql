@@ -10,7 +10,7 @@
     "jsr:@std/testing@*": "1.0.15",
     "npm:messageformat@2.3.0": "2.3.0",
     "npm:messagepipe@0.2.3": "0.2.3",
-    "npm:nanolex@~0.8.1": "0.8.1"
+    "npm:nanolex@~0.8.2": "0.8.2"
   },
   "jsr": {
     "@marcisbee/mf@0.5.0": {
@@ -75,13 +75,13 @@
     "minimist@1.2.8": {
       "integrity": "sha512-2yyAR8qBkN3YuheJanUpWC5U3bb5osDywNB8RzDVlDwDHbocAJveqqj1u8+SVD7jkWT4yvsHCpWqqWqAxb0zCA=="
     },
-    "nanolex@0.8.1": {
-      "integrity": "sha512-on3eRERuF5ulGtmatt/t+8+vNHOewL5sPA7Mgzn/luKupwCN5287Zez5DldflqqlFsKqMJL98tSFllz+dGSvJQ=="
+    "nanolex@0.8.2": {
+      "integrity": "sha512-+tbMPlFTrdHyhy+Ag41+zvIwUI5IWV/fHR+JvjIPz2lOrtrKGjqM1MG8g904vwSB80EEv9AQFdWqxrjpdLoUWQ=="
     }
   },
   "workspace": {
     "dependencies": [
-      "npm:nanolex@~0.8.1"
+      "npm:nanolex@~0.8.2"
     ]
   }
 }
