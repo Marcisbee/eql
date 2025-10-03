@@ -23,3 +23,4 @@
 - prefer code clarity over cleverness
 - prefer immutability, avoid mutating objects and arrays directly
 - keep comments minimal and only when necessary to explain complex logic
+- do not write what or why you did things in comments
