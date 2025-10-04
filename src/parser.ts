@@ -199,10 +199,6 @@ function unquote(s: string): string {
 }
 
 /* --------------------------- Infix / Operator Helpers ----------------------- */
-interface OpRight {
-  op: string;
-  right: Expression;
-}
 function leftAssoc(
   term: Grammar<Expression>,
   op: Grammar<string>,
@@ -210,24 +206,18 @@ function leftAssoc(
   return and(
     [
       term,
-      zeroOrMany(and([op, term], (values): OpRight => ({
-        op: values[0] as string,
-        right: values[1] as Expression,
-      }))),
+      zeroOrMany(and([op, term])),
     ],
     ([first, rest]) => {
-      let acc = first as Expression;
-      const ops = rest as OpRight[];
-      for (let i = 0; i < ops.length; i++) {
-        const { op, right } = ops[i];
-        acc = ({
+      for (const [op, right] of rest) {
+        first = ({
           type: BINARY_EXPRESSION,
           operator: op,
-          left: acc,
+          left: first,
           right,
         }) as BinaryExpression;
       }
-      return acc;
+      return first;
     },
   );
 }
