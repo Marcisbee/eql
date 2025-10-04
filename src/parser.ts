@@ -86,9 +86,9 @@ const Escape = createToken("\\");
 const AndTok = createToken("and");
 const OrTok = createToken("or");
 const NotTok = createToken("not");
-const True = createToken("true");
-const False = createToken("false");
-const NullTok = createToken("null");
+// const True = createToken("true");
+// const False = createToken("false");
+// const NullTok = createToken("null");
 
 /* Literals */
 const NumberTok = createToken(/[0-9]+(?:\.[0-9]+)?/, "Number");
@@ -136,33 +136,66 @@ const tokens = [
 /**
  * Unquote and unescape a JSON-like string literal.
  */
-function unquote(raw: string): string {
-  return raw
-    .slice(1, -1)
-    .replace(/\\(["\\/bfnrt])/g, (_m, c) => {
-      switch (c) {
+function unquote(s: string): string {
+  // Single-pass unescape (assumes valid string literal form)
+  let out = "";
+  const end = s.length - 1;
+  for (let i = 1; i < end; i++) {
+    const c = s[i];
+    if (c === "\\") {
+      i++;
+      if (i >= end) break;
+      const esc = s[i];
+      switch (esc) {
         case '"':
         case "\\":
         case "/":
-          return c;
+          out += esc;
+          continue;
         case "b":
-          return "\b";
+          out += "\b";
+          continue;
         case "f":
-          return "\f";
+          out += "\f";
+          continue;
         case "n":
-          return "\n";
+          out += "\n";
+          continue;
         case "r":
-          return "\r";
+          out += "\r";
+          continue;
         case "t":
-          return "\t";
+          out += "\t";
+          continue;
+        case "u": {
+          // Expect 4 hex digits
+          const h1 = s.charCodeAt(i + 1);
+          const h2 = s.charCodeAt(i + 2);
+          const h3 = s.charCodeAt(i + 3);
+          const h4 = s.charCodeAt(i + 4);
+          const toHexVal = (cc: number): number => {
+            if (cc >= 48 && cc <= 57) return cc - 48; // 0-9
+            if (cc >= 65 && cc <= 70) return cc - 55; // A-F
+            if (cc >= 97 && cc <= 102) return cc - 87; // a-f
+            return 0;
+          };
+          const code = (toHexVal(h1) << 12) |
+            (toHexVal(h2) << 8) |
+            (toHexVal(h3) << 4) |
+            toHexVal(h4);
+          out += String.fromCharCode(code);
+          i += 4;
+          continue;
+        }
         default:
-          return c;
+          out += esc;
+          continue;
       }
-    })
-    .replace(
-      /\\u([0-9a-fA-F]{4})/g,
-      (_m, hex) => String.fromCharCode(parseInt(hex, 16)),
-    );
+    } else {
+      out += c;
+    }
+  }
+  return out;
 }
 
 /* --------------------------- Infix / Operator Helpers ----------------------- */
@@ -170,12 +203,6 @@ interface OpRight {
   op: string;
   right: Expression;
 }
-
-/**
- * Generic helper to build a left-associative operator level.
- * term: grammar for the next higher-precedence expression
- * op: grammar that consumes and returns an operator token/string
- */
 function leftAssoc(
   term: Grammar<Expression>,
   op: Grammar<string>,
@@ -188,9 +215,7 @@ function leftAssoc(
         right: values[1] as Expression,
       }))),
     ],
-    (
-      [first, rest],
-    ) => {
+    ([first, rest]) => {
       let acc = first as Expression;
       const ops = rest as OpRight[];
       for (let i = 0; i < ops.length; i++) {
