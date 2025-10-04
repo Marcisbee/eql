@@ -14,6 +14,18 @@ Deno.bench("eql.query", { group: "parse" }, () => {
   );
 });
 
+Deno.bench("eql.complex_message", { group: "parse" }, () => {
+  parseMessage(
+    "{users | filter(.age > 18) | map(.name) | sort}",
+  );
+});
+
+Deno.bench("eql.complex_query", { group: "parse" }, () => {
+  parseQuery(
+    "users | filter(.age > 18) | map(.name) | sort",
+  );
+});
+
 const ast1 = parseMessage(
   "Hello {a} {salutation} {user|upcase}!",
 );
@@ -26,4 +38,18 @@ const ast2 = parseQuery(
 );
 Deno.bench("eql.query", { group: "codegen" }, () => {
   generateQueryCode(ast2);
+});
+
+const ast3 = parseMessage(
+  "{users | filter(.age > 18) | map(.name) | sort}",
+);
+Deno.bench("eql.complex_query", { group: "codegen" }, () => {
+  generateMessageParts(ast3);
+});
+
+const ast4 = parseQuery(
+  "users | filter(.age > 18) | map(.name) | sort",
+);
+Deno.bench("eql.complex_query", { group: "codegen" }, () => {
+  generateQueryCode(ast4);
 });
