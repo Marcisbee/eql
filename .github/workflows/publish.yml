@@ -1,0 +1,52 @@
+name: Publish
+
+on:
+  release:
+    types: [created]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2
+      - run: deno install
+      - run: deno test
+      - run: deno fmt --check
+      - run: deno lint
+
+  publish-npm:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions/setup-node@v1
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org/
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2
+      - run: deno install
+      - run: ./_build_npm.ts
+      - run: cd npm && npm publish --provenance --access public .
+        env:
+          NODE_AUTH_TOKEN: ${{secrets.NPM_TOKEN}}
+
+  publish-jsr:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2
+      - run: deno publish
