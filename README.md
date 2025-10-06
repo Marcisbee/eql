@@ -33,29 +33,45 @@ Message mode:
 
 ## Install / Use
 
-Create an `Eql` instance and compile via its methods. (The former standalone
-`compileQuery` / `compileMessage` helpers have been removed; always go through
-an instance.)
+Install (choose one):
+
+npm (Node / Bun / bundlers):
+```bash
+npm install eql-js
+# or
+pnpm add eql-js
+# or
+yarn add eql-js
+```
+
+JSR (Deno / JSR-aware tooling):
+```bash
+deno add @marcisbee/eql
+# or
+npx jsr add @marcisbee/eql
+```
+
+Usage:
 
 ```ts
-import { Eql } from "./src/compile.ts";
+import { Eql } from "eql-js";
 
 const eql = new Eql();
 
 // Query (expression) mode
 const q = eql.compileQuery("users | map(.age) | sum");
-q({ users: [{ age: 2 }, { age: 5 }] }); // 7
+console.log(q({ users: [{ age: 2 }, { age: 5 }] })); // 7
 
 // Message (template) mode
 const m = eql.compileMessage("Adults: { users | filter(.age > 17) | len }");
-m({ users: [{ age: 10 }, { age: 20 }] }); // "Adults: 1"
+console.log(m({ users: [{ age: 10 }, { age: 20 }] })); // "Adults: 1"
 
 // With custom transformer
 const eql2 = new Eql({
   transformers: { double: (v) => (typeof v === "number" ? v * 2 : null) },
 });
 const q2 = eql2.compileQuery("(value + 1) | double");
-q2({ value: 5 }); // 12
+console.log(q2({ value: 5 })); // 12
 ```
 
 ## Core Concepts
