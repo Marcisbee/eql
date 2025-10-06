@@ -36,6 +36,7 @@ Message mode:
 Install (choose one):
 
 npm (Node / Bun / bundlers):
+
 ```bash
 npm install eql-js
 # or
@@ -45,6 +46,7 @@ yarn add eql-js
 ```
 
 JSR (Deno / JSR-aware tooling):
+
 ```bash
 deno add @marcisbee/eql
 # or
