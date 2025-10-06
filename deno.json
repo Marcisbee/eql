@@ -9,10 +9,10 @@
   "imports": {
     "nanolex": "npm:nanolex@^0.8.2"
   },
-    "lint": {
-      "rules": {
-        "tags": ["recommended"],
-        "exclude": ["no-unversioned-import", "no-explicit-any"]
-      }
+  "lint": {
+    "rules": {
+      "tags": ["recommended"],
+      "exclude": ["no-unversioned-import", "no-explicit-any"]
     }
+  }
 }
