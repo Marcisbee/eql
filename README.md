@@ -1,6 +1,6 @@
 # EQL – Embedded Query Language
 
-[![CI](https://img.shields.io/github/actions/workflow/status/Marcisbee/eql-js/main.yml?branch=main&style=flat-square)](https://github.com/Marcisbee/eql-js/actions)
+[![CI](https://img.shields.io/github/actions/workflow/status/Marcisbee/eql/main.yml?branch=main&style=flat-square)](https://github.com/Marcisbee/eql/actions)
 [![npm](https://img.shields.io/npm/v/eql-js.svg?style=flat-square)](https://www.npmjs.com/package/eql-js)
 [![jsr](https://jsr.io/badges/@marcisbee/eql?style=flat-square)](https://jsr.io/@marcisbee/eql)
 [![package size](https://deno.bundlejs.com/?q=eql-js&badge=&badge-style=flat-square)](https://bundlephobia.com/result?p=eql-js)
