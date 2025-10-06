@@ -202,7 +202,7 @@ const defaultTransformers: TransformerLibrary = {
     for (const el of arr) {
       let keep = false;
       try {
-        keep = !!(predicate as Function)(el);
+        keep = !!(predicate as any)(el);
       } catch {
         keep = false;
       }
@@ -216,7 +216,7 @@ const defaultTransformers: TransformerLibrary = {
     const out: unknown[] = [];
     for (const el of arr) {
       try {
-        out.push((mapper as Function)(el));
+        out.push((mapper as any)(el));
       } catch {
         out.push(null);
       }

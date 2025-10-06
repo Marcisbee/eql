@@ -1,8 +1,18 @@
 {
+  "name": "@marcisbee/eql",
+  "version": "0.1.0",
+  "license": "MIT",
+  "exports": "./src/main.ts",
   "tasks": {
     "dev": "deno run --watch src/main.ts"
   },
   "imports": {
     "nanolex": "npm:nanolex@^0.8.2"
-  }
+  },
+    "lint": {
+      "rules": {
+        "tags": ["recommended"],
+        "exclude": ["no-unversioned-import", "no-explicit-any"]
+      }
+    }
 }
