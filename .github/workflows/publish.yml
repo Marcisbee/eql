@@ -33,7 +33,7 @@ jobs:
         with:
           deno-version: v2
       - run: deno install
-      - run: ./_build_npm.ts
+      - run: ./build.npm.ts
       - run: cd npm && npm publish --provenance --access public .
         env:
           NODE_AUTH_TOKEN: ${{secrets.NPM_TOKEN}}
