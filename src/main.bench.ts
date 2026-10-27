@@ -69,9 +69,12 @@ Deno.bench("eql.message", { group: "eval" }, () => {
   fn1(data);
 });
 
-const fn2 = eqlInstance2.compileMessage(
+const fn2 = eqlInstance2.compileQuery(
   "user|upcase",
 );
+if (fn2(data) !== "TEST") {
+  throw new Error("Query benchmark must execute the transformer");
+}
 Deno.bench("eql.query", { group: "eval" }, () => {
   fn2(data);
 });

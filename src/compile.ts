@@ -154,6 +154,27 @@ function compareValues(op: string, a: unknown, b: unknown): boolean {
   }
 }
 
+/** Evaluate arithmetic on one pair of scalar operands. */
+function arithmeticValue(op: unknown, x: unknown, y: unknown): unknown {
+  const nx = toNumber(x);
+  const ny = toNumber(y);
+  if (nx === null || ny === null) return null;
+  switch (op) {
+    case "+":
+      return nx + ny;
+    case "-":
+      return nx - ny;
+    case "*":
+      return nx * ny;
+    case "/":
+      return ny === 0 ? null : nx / ny;
+    case "%":
+      return ny === 0 ? null : nx % ny;
+    default:
+      return null;
+  }
+}
+
 /**
  * Boolean reducers.
  */
@@ -465,35 +486,24 @@ const defaultTransformers: TransformerLibrary = {
   // Builtin helpers for codegen (not part of public API)
   _arith(...args: unknown[]): unknown {
     const [op, a, b] = args as [string, unknown, unknown];
-    const scalar = (x: unknown, y: unknown): unknown => {
-      const nx = toNumber(x);
-      const ny = toNumber(y);
-      if (nx === null || ny === null) return null;
-      switch (op) {
-        case "+":
-          return nx + ny;
-        case "-":
-          return nx - ny;
-        case "*":
-          return nx * ny;
-        case "/":
-          return ny === 0 ? null : nx / ny;
-        case "%":
-          return ny === 0 ? null : nx % ny;
-        default:
-          return null;
-      }
-    };
+    if (!Array.isArray(a) && !Array.isArray(b)) {
+      return arithmeticValue(op, a, b);
+    }
+    const scalar = (x: unknown, y: unknown) => arithmeticValue(op, x, y);
     return broadcastBinary(a, b, scalar, null);
   },
   _comp(...args: unknown[]): unknown {
     const [op, a, b] = args as [string, unknown, unknown];
+    if (!Array.isArray(a) && !Array.isArray(b)) return compareValues(op, a, b);
     const scalar = (x: unknown, y: unknown): boolean => compareValues(op, x, y);
     return broadcastBinary(a, b, scalar, false);
   },
   _logic(...args: unknown[]): unknown {
     const [rawOp, a, b] = args as ["and" | "or", unknown, unknown];
     const op = rawOp === "and" ? "and" : "or";
+    if (!Array.isArray(a) && !Array.isArray(b)) {
+      return op === "and" ? !!a && !!b : !!a || !!b;
+    }
     const scalar = (x: unknown, y: unknown): boolean =>
       op === "and" ? !!x && !!y : !!x || !!y;
     return broadcastBinary(a, b, scalar, false);
@@ -505,18 +515,46 @@ const defaultTransformers: TransformerLibrary = {
   },
 };
 
+type QueryFactory = (lib: TransformerLibrary) => CompiledQuery;
+type MessageFactory = (
+  lib: TransformerLibrary,
+  coerce: typeof _coerceMessageValue,
+) => CompiledMessage;
+
+const CACHE_LIMIT = 256;
+const MAX_CACHED_SOURCE_LENGTH = 16_384;
+const queryFactories = new Map<string, QueryFactory | null>();
+const messageFactories = new Map<string, MessageFactory | null>();
+
+/** Reuse compilation without retaining input data or transformer libraries. */
+function cachedFactory<T>(
+  cache: Map<string, T | null>,
+  source: string,
+  build: () => T,
+): T {
+  const cached = cache.get(source);
+  if (cached !== undefined && cached !== null) return cached;
+  const factory = build();
+  if (source.length <= MAX_CACHED_SOURCE_LENGTH) {
+    if (cached === undefined && cache.size >= CACHE_LIMIT) {
+      cache.clear();
+    }
+    cache.set(source, cached === null ? factory : null);
+  }
+  return factory;
+}
+
 /**
  * Build a safe execution wrapper.
  */
 function buildQueryExecutor(
   jsExpr: string,
-  lib: TransformerLibrary,
-): (i: unknown) => unknown {
+): QueryFactory {
   // Wrap in try/catch to yield null on runtime errors.
   const fn = new Function(
     "f",
     `return function(i){try{return(${jsExpr});}catch(_e){return null;}};`,
-  )(lib) as (i: unknown) => unknown;
+  ) as QueryFactory;
   return fn;
 }
 
@@ -525,8 +563,7 @@ function buildQueryExecutor(
  */
 function buildMessageExecutor(
   pieces: { code: string; isExpr: boolean }[],
-  lib: TransformerLibrary,
-): (i: unknown) => string {
+): MessageFactory {
   // Use shared _coerceMessageValue helper (passed into generated function).
   const parts = pieces.map((p) =>
     p.isExpr ? `__coerce(${p.code})` : `${p.code}`
@@ -535,9 +572,7 @@ function buildMessageExecutor(
   const expr = parts.length === 0 ? '""' : '"" + (' + parts.join(" + ") + ")";
   const full = "return function(i){try{return " + expr +
     ';}catch(_e){return "";}};';
-  return new Function("f", "__coerce", full)(lib, _coerceMessageValue) as (
-    i: unknown,
-  ) => string;
+  return new Function("f", "__coerce", full) as MessageFactory;
 }
 
 /**
@@ -561,23 +596,23 @@ export class Eql {
    * Instance compileQuery using this instance's transformers.
    */
   compileQuery(source: string): CompiledQuery {
-    const ast = parseQuery(source);
-    const jsExpr = generateQueryCode(ast);
-    return buildQueryExecutor(
-      jsExpr,
-      this._transformers,
-    ) as CompiledQuery;
+    const factory = cachedFactory(
+      queryFactories,
+      source,
+      () => buildQueryExecutor(generateQueryCode(parseQuery(source))),
+    );
+    return factory(this._transformers);
   }
 
   /**
    * Instance compileMessage using this instance's transformers.
    */
   compileMessage(source: string): CompiledMessage {
-    const tpl = parseMessage(source);
-    const pieces = generateMessageParts(tpl);
-    return buildMessageExecutor(
-      pieces,
-      this._transformers,
-    ) as CompiledMessage;
+    const factory = cachedFactory(
+      messageFactories,
+      source,
+      () => buildMessageExecutor(generateMessageParts(parseMessage(source))),
+    );
+    return factory(this._transformers, _coerceMessageValue);
   }
 }
