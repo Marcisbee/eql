@@ -281,6 +281,19 @@ directly (advanced use).
 - One pass parse, one pass codegen.
 - Helpers tuned for small overhead; broadcasting loops are direct.
 - Compile once, reuse many times.
+- Repeated compilation reuses generated function factories across `Eql`
+  instances. Each call still returns a fresh function bound to that instance's
+  transformers; input data and results are never cached.
+- Query and message caches each hold up to 256 sources and reset when full. A
+  factory is retained only when its source occurs a second time. Sources longer
+  than 16,384 characters are not retained. Unique sources still require parsing
+  and code generation and incur cache lookup/bookkeeping overhead.
+
+Run `deno bench src/performance.bench.ts` to measure batches of 100 repeated or
+unique query/message compilations, a query over 10,000 rows, and message
+rendering. The runtime workloads validate their expected outputs before timing;
+compilation and runtime results are retained so the benchmark includes result
+allocation.
 
 ## Design Principles
 

@@ -205,3 +205,59 @@ describe("compileQuery - error resilience", () => {
     expect(fn({})).toEqual([null, null]);
   });
 });
+
+describe("repeated compilation", () => {
+  it("binds cached query and message code to each instance's transformers", () => {
+    const first = new Eql({ transformers: { custom: (v) => `first:${v}` } });
+    const second = new Eql({ transformers: { custom: (v) => `second:${v}` } });
+    for (const instance of [first, second, first]) {
+      const prefix = instance === first ? "first" : "second";
+      const query = instance.compileQuery("value | custom");
+      const message = instance.compileMessage("Value {value | custom}");
+      expect(instance.compileMessage("value | custom")({ value: "a" }))
+        .toBe("value | custom");
+      expect(query({ value: "a" })).toBe(`${prefix}:a`);
+      expect(query({ value: "b" })).toBe(`${prefix}:b`);
+      expect(message({ value: "a" })).toBe(`Value ${prefix}:a`);
+      expect(message({ value: "b" })).toBe(`Value ${prefix}:b`);
+    }
+  });
+
+  it("returns independent functions and fresh result objects", () => {
+    const input = { input: 1 };
+    let previous;
+    for (const _ of [0, 1, 2, 3]) {
+      const query = eql.compileQuery("{value: input}");
+      expect(query).not.toBe(previous);
+      expect(query.source).toBeUndefined();
+      query.source = "caller annotation";
+      previous = query;
+      const result = query(input) as { value: number };
+      expect(result).toEqual({ value: 1 });
+      result.value = 99;
+      expect(query(input)).toEqual({ value: 1 });
+      const message = eql.compileMessage("{input}");
+      expect(message.source).toBeUndefined();
+      message.source = "caller annotation";
+    }
+  });
+
+  it("keeps parse failures and runtime failures distinct on repeat calls", () => {
+    const throwing = new Eql({
+      transformers: {
+        fail: () => {
+          throw new Error("failure");
+        },
+      },
+    });
+    for (const _ of [0, 1]) {
+      expect(() => throwing.compileQuery("(")).toThrow();
+      expect(() => throwing.compileMessage("{(")).toThrow();
+      expect(throwing.compileQuery("value | fail")({ value: 1 })).toBeNull();
+      expect(
+        throwing.compileMessage("Before {value | fail} after")({ value: 1 }),
+      )
+        .toBe("");
+    }
+  });
+});
