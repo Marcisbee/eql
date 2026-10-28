@@ -3,12 +3,20 @@ name: Publish
 on:
   release:
     types: [created]
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing release tag to publish to npm only
+        required: true
+        type: string
 
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.release_tag && format('refs/tags/{0}', inputs.release_tag) || github.ref }}
       - uses: denoland/setup-deno@v2
         with:
           deno-version: v2
@@ -24,21 +32,23 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions/setup-node@v1
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.release_tag && format('refs/tags/{0}', inputs.release_tag) || github.ref }}
+      - uses: actions/setup-node@v6
         with:
           node-version: 24
           registry-url: https://registry.npmjs.org/
+          package-manager-cache: false
       - uses: denoland/setup-deno@v2
         with:
           deno-version: v2
       - run: deno install
       - run: ./build.npm.ts
       - run: cd npm && npm publish --provenance --access public .
-        env:
-          NODE_AUTH_TOKEN: ${{secrets.NPM_TOKEN}}
 
   publish-jsr:
+    if: github.event_name == 'release'
     needs: test
     runs-on: ubuntu-latest
     permissions:
